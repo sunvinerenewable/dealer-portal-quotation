@@ -419,7 +419,7 @@ export const FIELD_BOM_MASTER_CATALOG = [
   { id: 'ms_angels', name: 'MS Angles (Structural Bracing)', category: 'structure', unit: 'NOS', defaultRate: 35, gstRate: 18 },
   { id: 'fastner', name: 'Fastener Anchor Bolts (M10/M12)', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
   { id: 'ms_j_bolt', name: 'MS J-Bolt (40*40)', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
-  { id: 'mc4_connector', name: 'MC4 Solar Connectors (M+F Pair)', category: 'electrical', unit: 'NOS', defaultRate: 35, gstRate: 18 },
+  { id: 'mc4_connector', name: 'MC4 Solar Connectors (M+F Pair)', category: 'electrical', unit: 'NOS', defaultRate: 35, gstRate: 5 },
   { id: 'pvc_pipe_25mm', name: '25mm Heavy PVC Conduit Pipe', category: 'conduits', unit: 'NOS', defaultRate: 45, gstRate: 18 },
   { id: 'pvc_tee_25mm', name: 'PVC Tee 25mm Polycab', category: 'conduits', unit: 'PSC', defaultRate: 5, gstRate: 18 },
   { id: 'pvc_elbow_25mm', name: 'PVC Elbow 25mm Polycab', category: 'conduits', unit: 'PSC', defaultRate: 6, gstRate: 18 },
@@ -473,31 +473,31 @@ export function generateFieldBOM({
     isMajorEquipment: true
   };
 
-  // 2. Standard Materials & BOS (18% GST) calibrated to panel count
+  // 2. Standard Materials & BOS calibrated to panel count (MC4 = 5% GST, other BOS = 18% GST)
   const pCount = Math.max(1, panelQuantity);
   const bosItems = [
-    { id: 'gi_pipe_40x40', name: '40*40 hot dip pipe', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: safeRates.gi_pipe_40x40 || 1420, gstRate: 18 },
+    { id: 'gi_pipe_40x40', name: '40*40 HOT DIP PIPE', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: safeRates.gi_pipe_40x40 || 1420, gstRate: 18 },
     { id: 'gi_pipe_60x40', name: '60*40 HOT DIP GIPIPE', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.67)), rate: safeRates.gi_pipe_60x40 || 1785, gstRate: 18 },
     { id: 'stud_12x2m', name: 'STUD 12*2MTR', category: 'structure', unit: 'NOS', qty: Math.max(1, Math.round(pCount * 0.33)), rate: safeRates.stud_12x2m || 140, gstRate: 18 },
-    { id: 'ms_angels', name: 'MS ANGELS', category: 'structure', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.33)), rate: safeRates.ms_angels || 35, gstRate: 18 },
-    { id: 'fastner', name: 'FASTNER', category: 'structure', unit: 'NOS', qty: Math.max(8, Math.round(pCount * 2.67)), rate: safeRates.fastner || 15, gstRate: 18 },
-    { id: 'ms_j_bolt', name: 'MS J BOLT(40*40)', category: 'structure', unit: 'NOS', qty: Math.max(12, pCount * 4), rate: safeRates.ms_j_bolt || 15, gstRate: 18 },
-    { id: 'mc4_connector', name: 'mc4 connector', category: 'electrical', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.33)), rate: safeRates.mc4_connector || 35, gstRate: 18 },
-    { id: 'pvc_pipe_25mm', name: '25 PVC PIPE', category: 'conduits', unit: 'NOS', qty: Math.max(6, Math.round(pCount * 1.67)), rate: safeRates.pvc_pipe_25mm || 45, gstRate: 18 },
-    { id: 'pvc_tee_25mm', name: 'PVC TEE 25 MM POLYCAB', category: 'conduits', unit: 'PSC', qty: Math.max(4, Math.round(pCount * 1.17)), rate: safeRates.pvc_tee_25mm || 5, gstRate: 18 },
-    { id: 'pvc_elbow_25mm', name: 'PVC ELBOW 25MM POLYCAB', category: 'conduits', unit: 'PSC', qty: Math.max(12, Math.round(pCount * 4.17)), rate: safeRates.pvc_elbow_25mm || 6, gstRate: 18 },
-    { id: 'shadel_clamp', name: 'SHADEL', category: 'conduits', unit: 'PKT', qty: 1, rate: safeRates.shadel_clamp || 120, gstRate: 18 },
-    { id: 'acdb_dcdb_combo', name: 'ASG ACDB 1KW - 6KW', category: 'electrical', unit: 'SET', qty: 1, rate: safeRates.acdb_dcdb_combo || 1650, gstRate: 18 },
+    { id: 'ms_angels', name: 'MS ANGLES', category: 'structure', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.33)), rate: safeRates.ms_angels || 35, gstRate: 18 },
+    { id: 'fastner', name: 'ANCHOR FASTENER', category: 'structure', unit: 'NOS', qty: Math.max(8, Math.round(pCount * 2.67)), rate: safeRates.fastner || 15, gstRate: 18 },
+    { id: 'ms_j_bolt', name: 'MS J-BOLT (40*40)', category: 'structure', unit: 'NOS', qty: Math.max(12, pCount * 4), rate: safeRates.ms_j_bolt || 15, gstRate: 18 },
+    { id: 'mc4_connector', name: 'MC4 CONNECTOR', category: 'electrical', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.33)), rate: safeRates.mc4_connector || 35, gstRate: 5 },
+    { id: 'pvc_pipe_25mm', name: 'PVC PIPE 25MM', category: 'conduits', unit: 'NOS', qty: Math.max(6, Math.round(pCount * 1.67)), rate: safeRates.pvc_pipe_25mm || 45, gstRate: 18 },
+    { id: 'pvc_tee_25mm', name: 'POLYCAB PVC TEE 25MM', category: 'conduits', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.17)), rate: safeRates.pvc_tee_25mm || 5, gstRate: 18 },
+    { id: 'pvc_elbow_25mm', name: 'POLYCAB PVC ELBOW 25MM', category: 'conduits', unit: 'NOS', qty: Math.max(12, Math.round(pCount * 4.17)), rate: safeRates.pvc_elbow_25mm || 6, gstRate: 18 },
+    { id: 'shadel_clamp', name: 'SADDLE CLAMP', category: 'conduits', unit: 'PKT', qty: 1, rate: safeRates.shadel_clamp || 120, gstRate: 18 },
+    { id: 'acdb_dcdb_combo', name: 'ASG ACDB-DCDB 1KW - 6KW', category: 'electrical', unit: 'SET', qty: 1, rate: safeRates.acdb_dcdb_combo || 1650, gstRate: 18 },
     { id: 'dc_wire_4sqmm', name: 'DC 4 SQMM 1 CORE RED/BLACK EN TYPE', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 8.33)), rate: safeRates.dc_wire_4sqmm || 60, gstRate: 18 },
     { id: 'ac_wire_4sqmm', name: 'AC CABLE 4SQ MM', category: 'cables', unit: 'MTR', qty: Math.max(10, Math.round(pCount * 1.67)), rate: safeRates.ac_wire_4sqmm || 58, gstRate: 18 },
     { id: 'la_cable', name: 'LA CABLE', category: 'cables', unit: 'MTR', qty: 25, rate: safeRates.la_cable || 20, gstRate: 18 },
     { id: 'earthing_cable', name: 'EARTHING CABLE 4SQ MM (REPUTED MAKE)', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 6.67)), rate: safeRates.earthing_cable || 35, gstRate: 18 },
-    { id: 'earthing_kit', name: 'EARTHING KIT', category: 'electrical', unit: 'NOS', qty: Math.max(1, kw > 5 ? 2 : 1), rate: safeRates.earthing_kit || 650, gstRate: 18 },
+    { id: 'earthing_kit', name: 'EARTHING KIT', category: 'electrical', unit: 'SET', qty: Math.max(1, kw > 5 ? 2 : 1), rate: safeRates.earthing_kit || 650, gstRate: 18 },
     { id: 'foundation_bag', name: 'FOUNDATION BAG', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: safeRates.foundation_bag || 120, gstRate: 18 },
-    { id: 'walkway', name: 'WALKWAY', category: 'structure', unit: 'SET', qty: 0, rate: safeRates.walkway || 420, gstRate: 18 },
-    { id: 'zinc_spray', name: 'ZINK SPRAY(200ML)', category: 'structure', unit: 'NOS', qty: 1, rate: safeRates.zinc_spray || 140, gstRate: 18 },
+    { id: 'walkway', name: 'WALKWAY', category: 'structure', unit: 'NOS', qty: 0, rate: safeRates.walkway || 420, gstRate: 18 },
+    { id: 'zinc_spray', name: 'ZINC SPRAY (200ML)', category: 'structure', unit: 'NOS', qty: 1, rate: safeRates.zinc_spray || 140, gstRate: 18 },
     { id: 'nut_washer', name: 'NUT WASHER', category: 'structure', unit: 'NOS', qty: Math.max(16, pCount * 4), rate: safeRates.nut_washer || 2.50, gstRate: 18 },
-    { id: 'transportation', name: 'TRANSPORTATION', category: 'logistics', unit: 'SET', qty: 1, rate: safeRates.transportation || 1000, gstRate: 0 }
+    { id: 'transportation', name: 'TRANSPORTATION', category: 'logistics', unit: 'NOS', qty: 1, rate: safeRates.transportation || 1000, gstRate: 0 }
   ];
 
   return [

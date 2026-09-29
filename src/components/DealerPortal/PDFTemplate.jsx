@@ -1,5 +1,5 @@
 import React from 'react';
-import { resolveCapacityBom } from '../../data/standardBomData';
+import { resolveCapacityBom, calculateFieldBOMTotals } from '../../data/standardBomData';
 
 // Format Indian Rupee currency with commas
 const formatINR = (val) => {
@@ -405,64 +405,89 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-gray-900 font-medium">
-                  {bomItems.map((item, idx) => (
-                    <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
-                      <td className="py-0.5 px-2 text-center text-gray-500 font-mono border-r border-slate-200">
-                        {idx + 1}
-                      </td>
-                      <td className="py-0.5 px-2 border-r border-slate-200">
-                        <span className="font-bold text-[#0B2545]">{item.item}</span>
-                        {item.specs && <span className="text-[8px] text-gray-500 ml-1">({item.specs})</span>}
-                      </td>
-                      <td className="py-0.5 px-1.5 text-center font-mono font-bold border-r border-slate-200">
-                        {item.qty}
-                      </td>
-                      <td className="py-0.5 px-1.5 text-center font-mono text-[8.5px] text-gray-600 border-r border-slate-200">
-                        {item.unit || 'PCS'}
-                      </td>
-                      <td className="py-0.5 px-2 text-right font-mono border-r border-slate-200">
-                        {formatINR(item.rate)}
-                      </td>
-                      <td className="py-0.5 px-1 text-center border-r border-slate-200">
-                        <span className={`px-1 py-0.2 rounded font-bold text-[8px] ${item.taxRate === 5 ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
-                          {item.taxRate}%
-                        </span>
-                      </td>
-                      <td className="py-0.5 px-2 text-right font-mono font-bold text-gray-900">
-                        {formatINR(item.totalWithGst)}
-                      </td>
-                    </tr>
-                  ))}
+                  {bomItems.map((item, idx) => {
+                    const itemName = item.name || item.item || item.description || `BOM Item #${idx + 1}`;
+                    const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
+                    const qty = Number(item.qty) || 0;
+                    const rate = Number(item.rate) || 0;
+                    const lineTotal = (item.totalWithGst !== undefined && item.totalWithGst > 0)
+                      ? item.totalWithGst
+                      : (item.total !== undefined && item.total > 0)
+                        ? Math.round(item.total * (1 + gst / 100))
+                        : Math.round(qty * rate * (1 + gst / 100));
+
+                    return (
+                      <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
+                        <td className="py-0.5 px-2 text-center text-gray-500 font-mono border-r border-slate-200">
+                          {idx + 1}
+                        </td>
+                        <td className="py-0.5 px-2 border-r border-slate-200">
+                          <span className="font-bold text-[#0B2545]">{itemName}</span>
+                          {item.specs && <span className="text-[8px] text-gray-500 ml-1">({item.specs})</span>}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-center font-mono font-bold border-r border-slate-200">
+                          {qty}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-center font-mono text-[8.5px] text-gray-600 border-r border-slate-200">
+                          {item.unit || 'NOS'}
+                        </td>
+                        <td className="py-0.5 px-2 text-right font-mono border-r border-slate-200">
+                          {formatINR(rate)}
+                        </td>
+                        <td className="py-0.5 px-1 text-center border-r border-slate-200">
+                          <span className={`px-1 py-0.2 rounded font-bold text-[8px] ${gst === 5 ? 'bg-emerald-100 text-emerald-800' : gst === 0 ? 'bg-gray-100 text-gray-700' : 'bg-blue-100 text-blue-800'}`}>
+                            {gst}%
+                          </span>
+                        </td>
+                        <td className="py-0.5 px-2 text-right font-mono font-bold text-gray-900">
+                          {formatINR(lineTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })}
 
                   {/* Field BOM Subtotals Summary Rows */}
-                  {bomTotals && (
-                    <>
-                      <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px] border-t border-slate-300">
-                        <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
-                          SOLAR PV MODULES &amp; INVERTER (5% GST BASE: ₹{formatINR(bomTotals.subtotal5GstBase)} + TAX: ₹{formatINR(bomTotals.gst5Total)}) :
-                        </td>
-                        <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
-                          ₹ {formatINR(bomTotals.subtotal5GstBase + bomTotals.gst5Total)}
-                        </td>
-                      </tr>
-                      <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
-                        <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
-                          STRUCTURE &amp; BOS MATERIALS (18% GST BASE: ₹{formatINR(bomTotals.subtotal18GstBase)} + TAX: ₹{formatINR(bomTotals.gst18Total)}) :
-                        </td>
-                        <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
-                          ₹ {formatINR(bomTotals.subtotal18GstBase + bomTotals.gst18Total)}
-                        </td>
-                      </tr>
-                      <tr className="bg-[#0B2545] text-white font-black text-[9.5px]">
-                        <td colSpan={4} className="py-1 px-2 text-right uppercase tracking-wider border-r border-slate-700">
-                          TOTAL ENGINEERING BILL OF MATERIALS (GROSS INCL. GST) :
-                        </td>
-                        <td colSpan={3} className="py-1 px-2 text-right font-mono text-xs font-black text-amber-300">
-                          ₹ {formatINR(bomTotals.grossTurnkeyCost)}
-                        </td>
-                      </tr>
-                    </>
-                  )}
+                  {(bomTotals || (bomItems && bomItems.length > 0 ? calculateFieldBOMTotals(bomItems) : null)) && (() => {
+                    const effectiveTotals = bomTotals || calculateFieldBOMTotals(bomItems);
+                    return (
+                      <>
+                        <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px] border-t border-slate-300">
+                          <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
+                            SOLAR PV MODULES, INVERTER &amp; MC4 CONNECTORS (5% GST BASE: ₹{formatINR(effectiveTotals.subtotal5GstBase)} + TAX: ₹{formatINR(effectiveTotals.gst5Total)}) :
+                          </td>
+                          <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
+                            ₹ {formatINR(effectiveTotals.subtotal5GstBase + effectiveTotals.gst5Total)}
+                          </td>
+                        </tr>
+                        <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
+                          <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
+                            STRUCTURE &amp; BOS MATERIALS (18% GST BASE: ₹{formatINR(effectiveTotals.subtotal18GstBase)} + TAX: ₹{formatINR(effectiveTotals.gst18Total)}) :
+                          </td>
+                          <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
+                            ₹ {formatINR(effectiveTotals.subtotal18GstBase + effectiveTotals.gst18Total)}
+                          </td>
+                        </tr>
+                        {effectiveTotals.transportTotal > 0 && (
+                          <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
+                            <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
+                              FREIGHT, PACKAGING &amp; TRANSIT LOGISTICS (0% GST BASE: ₹{formatINR(effectiveTotals.transportTotal)}) :
+                            </td>
+                            <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
+                              ₹ {formatINR(effectiveTotals.transportTotal)}
+                            </td>
+                          </tr>
+                        )}
+                        <tr className="bg-[#0B2545] text-white font-black text-[9.5px]">
+                          <td colSpan={4} className="py-1 px-2 text-right uppercase tracking-wider border-r border-slate-700">
+                            TOTAL ENGINEERING BILL OF MATERIALS (GROSS INCL. GST) :
+                          </td>
+                          <td colSpan={3} className="py-1 px-2 text-right font-mono text-xs font-black text-amber-300">
+                            ₹ {formatINR(effectiveTotals.grossTurnkeyCost)}
+                          </td>
+                        </tr>
+                      </>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>

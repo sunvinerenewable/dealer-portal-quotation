@@ -5,6 +5,7 @@ import { useToast } from '../Shared/Toast';
 import PanelLayoutVisualizer from '../Shared/PanelLayoutVisualizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 import {
   generateFieldBOM,
   calculateFieldBOMTotals,
@@ -27,6 +28,15 @@ export const SOLAR_PANEL_BRANDS = [
 
 export const STANDARD_WATTS = [540, 550, 580, 585, 600];
 export const QUICK_PANEL_COUNTS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24];
+
+export const BOM_MOBILE_CATEGORIES = [
+  { id: 'all', label: 'All Items' },
+  { id: 'major', label: 'Solar & Inverter (5%)', match: ['panel', 'inverter'] },
+  { id: 'structure', label: 'Structure & Mounting', match: ['structure'] },
+  { id: 'electrical', label: 'Electrical & ACDB', match: ['electrical'] },
+  { id: 'cables', label: 'Cables & Conduits', match: ['cables', 'conduits'] },
+  { id: 'other', label: 'Logistics / Custom', match: ['logistics', 'custom'] }
+];
 
 export const getAutoMatchingInverter = (kwVal) => {
   if (kwVal <= 2.5) return 'Sunvine Solaryaan 2.2G (1-Phase)';
@@ -208,6 +218,7 @@ export default function CreateQuotation() {
   const initialWpRate = customWpRate || activeBrandObj.ratePerWp || 18.00;
   const [ratePerWp, setRatePerWp] = useState(initialWpRate);
   const [perPanelPrice, setPerPanelPrice] = useState(() => Math.round(initialWpRate * (panelWatt || 585)));
+  const [isRateDropdownOpen, setIsRateDropdownOpen] = useState(false);
 
   // Bidirectional reactivity handlers
   const handleRatePerWpChange = (val) => {
@@ -290,7 +301,9 @@ export default function CreateQuotation() {
     });
   });
 
-  // Selected kit preset for loading
+  // Selected kit preset for loading & View Mode
+  const [bomViewMode, setBomViewMode] = useTableViewMode('dealer_quote_bom', 'table');
+  const [mobileBomCategory, setMobileBomCategory] = useState('all');
   const [selectedKitId, setSelectedKitId] = useState('');
   const [isSaveKitModalOpen, setIsSaveKitModalOpen] = useState(false);
   const [newKitName, setNewKitName] = useState('');
@@ -388,18 +401,29 @@ export default function CreateQuotation() {
     return calculateFieldBOMTotals(bomItems);
   }, [bomItems]);
 
+  // Mobile Filtered Category Items
+  const filteredMobileBomItems = useMemo(() => {
+    if (mobileBomCategory === 'all') return bomItems;
+    const catObj = BOM_MOBILE_CATEGORIES.find(c => c.id === mobileBomCategory);
+    if (!catObj || !catObj.match) return bomItems;
+    return bomItems.filter(i => catObj.match.includes(i.category || ''));
+  }, [bomItems, mobileBomCategory]);
+
   // Item quantity updater
   const handleBomQtyChange = (itemId, newQty) => {
     const numericQty = Math.max(0, Number(newQty) || 0);
     setBomItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
+      const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
       const total = numericQty * item.rate;
-      const totalWithGst = Math.round(total * (1 + (item.taxRate || 18) / 100));
+      const totalWithGst = Math.round(total * (1 + gst / 100));
       return {
         ...item,
         qty: numericQty,
         total,
         totalWithGst,
+        gstRate: gst,
+        taxRate: gst,
         userOverridden: true
       };
     }));
@@ -410,13 +434,16 @@ export default function CreateQuotation() {
     const numericRate = Math.max(0, Number(newRate) || 0);
     setBomItems(prev => prev.map(item => {
       if (item.id !== itemId) return item;
+      const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
       const total = item.qty * numericRate;
-      const totalWithGst = Math.round(total * (1 + (item.taxRate || 18) / 100));
+      const totalWithGst = Math.round(total * (1 + gst / 100));
       return {
         ...item,
         rate: numericRate,
         total,
         totalWithGst,
+        gstRate: gst,
+        taxRate: gst,
         userOverridden: true
       };
     }));
@@ -1369,48 +1396,89 @@ export default function CreateQuotation() {
                     ))}
                   </div>
 
-                  {/* Dual Reactive Inputs: Rate / Wp AND Price / Panel */}
-                  <div className="p-2.5 rounded-lg bg-surface border border-surface-container-high grid grid-cols-2 gap-2 mt-0.5">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">
-                          Rate per Wp
-                        </label>
-                        <span className="text-[10px] text-primary font-semibold">₹ / Watt</span>
+                  {/* Collapsible Dropdown Menu: Rate / Wp AND Price / Panel */}
+                  <div className="mt-0.5 border border-surface-container-high rounded-lg overflow-hidden bg-surface-container-lowest transition-all">
+                    <button
+                      type="button"
+                      onClick={() => setIsRateDropdownOpen(prev => !prev)}
+                      className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-surface-container/40 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="material-symbols-outlined text-[17px] text-primary shrink-0">tune</span>
+                        <span className="text-xs font-semibold text-on-surface truncate">Custom Rate &amp; Price per Panel</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container text-primary font-bold shrink-0">
+                          ₹{ratePerWp.toFixed(2)}/Wp
+                        </span>
                       </div>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
-                        <input
-                          type="number"
-                          step="0.05"
-                          min="10"
-                          max="40"
-                          value={ratePerWp}
-                          onChange={(e) => handleRatePerWpChange(e.target.value)}
-                          className="w-full h-8 pl-6 pr-2 rounded-md bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary outline-none"
-                        />
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <span className="text-[11px] font-mono font-bold text-secondary hidden xs:inline">
+                          ₹{perPanelPrice.toLocaleString('en-IN')}/pc
+                        </span>
+                        <span className={`material-symbols-outlined text-[18px] text-secondary transition-transform duration-200 ${isRateDropdownOpen ? 'rotate-180 text-primary' : ''}`}>
+                          expand_more
+                        </span>
                       </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">
-                          Price per Panel
-                        </label>
-                        <span className="text-[10px] text-primary font-semibold">₹ / Piece</span>
+                    </button>
+
+                    {isRateDropdownOpen && (
+                      <div className="p-2.5 pt-2 border-t border-surface-container-high/60 bg-surface/50 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">
+                                Rate per Wp
+                              </label>
+                              <span className="text-[10px] text-primary font-semibold">₹ / Watt</span>
+                            </div>
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="10"
+                                max="40"
+                                value={ratePerWp}
+                                onChange={(e) => handleRatePerWpChange(e.target.value)}
+                                className="w-full h-8 pl-6 pr-2 rounded-md bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">
+                                Price per Panel
+                              </label>
+                              <span className="text-[10px] text-primary font-semibold">₹ / Piece</span>
+                            </div>
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
+                              <input
+                                type="number"
+                                step="50"
+                                min="1000"
+                                max="25000"
+                                value={perPanelPrice}
+                                onChange={(e) => handlePerPanelPriceChange(e.target.value)}
+                                className="w-full h-8 pl-6 pr-2 rounded-md bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 text-[10px] text-secondary">
+                          <span>Default: ₹{(activeBrandObj?.ratePerWp || 18).toFixed(2)}/Wp</span>
+                          {ratePerWp !== (activeBrandObj?.ratePerWp || 18) && (
+                            <button
+                              type="button"
+                              onClick={() => handleRatePerWpChange(activeBrandObj?.ratePerWp || 18)}
+                              className="text-primary hover:underline font-semibold cursor-pointer"
+                            >
+                              Reset to Default
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
-                        <input
-                          type="number"
-                          step="50"
-                          min="1000"
-                          max="25000"
-                          value={perPanelPrice}
-                          onChange={(e) => handlePerPanelPriceChange(e.target.value)}
-                          className="w-full h-8 pl-6 pr-2 rounded-md bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary outline-none"
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1457,50 +1525,37 @@ export default function CreateQuotation() {
                   </div>
                 </div>
 
-                {/* Quick Count Selection Chips */}
-                <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                  <span className="text-[11px] font-semibold text-secondary mr-1">Quick Select:</span>
-                  {QUICK_PANEL_COUNTS.map((cnt) => (
-                    <button
-                      key={cnt}
-                      type="button"
-                      onClick={() => setPanelQuantity(cnt)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition-all cursor-pointer ${
-                        panelQuantity === cnt
-                          ? 'bg-primary text-white border-primary shadow-xs font-bold'
-                          : 'bg-surface text-secondary border-surface-container-high hover:border-primary/50'
-                      }`}
-                    >
-                      {cnt} Pcs ({((panelWatt * cnt) / 1000).toFixed(1)} kW)
-                    </button>
-                  ))}
-                </div>
 
                 {/* Auto-Calculated Capacity Highlight Banner */}
-                <div className="p-3 bg-emerald-500/15 border-2 border-emerald-500/50 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <span className="material-symbols-outlined text-[24px]">electric_bolt</span>
+                <div className="p-3 sm:p-3.5 bg-emerald-500/15 border-2 border-emerald-500/50 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950">
+                  <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5 sm:mt-0">
+                      <span className="material-symbols-outlined text-[20px] sm:text-[24px]">electric_bolt</span>
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] uppercase font-extrabold tracking-wider bg-emerald-700 text-white px-2 py-0.5 rounded-full">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[9px] sm:text-[10px] uppercase font-extrabold tracking-wider bg-emerald-700 text-white px-2 py-0.5 rounded-full shrink-0">
                           Auto-Calculated Plant Capacity
                         </span>
-                        <span className="text-xs font-semibold text-emerald-800">
-                          Formula: ({panelWatt}W × {panelQuantity} Pcs) ÷ 1000
+                        <span className="text-[11px] font-medium text-emerald-800">
+                          ({panelWatt}W × {panelQuantity} Pcs) ÷ 1000
                         </span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-black text-emerald-900 mt-0.5 tracking-tight font-mono">
-                        {kw} kW System ({((panelWatt * panelQuantity) / 1000).toFixed(2)} kWp)
+                      <div className="text-lg sm:text-2xl font-black text-emerald-900 mt-1 sm:mt-0.5 tracking-tight font-mono break-words">
+                        {kw} kW System <span className="text-sm sm:text-lg font-bold text-emerald-800">({((panelWatt * panelQuantity) / 1000).toFixed(2)} kWp)</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-right sm:border-l sm:border-emerald-300 sm:pl-4">
-                    <div className="text-[11px] font-semibold text-emerald-800">Rooftop Area Required</div>
-                    <div className="text-sm font-bold text-emerald-950 font-mono">~{rooftopAreaSqFt} Sq. Ft.</div>
-                    <div className="text-[10px] text-emerald-700">Shadow-free roof space</div>
+                  <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center pt-2 sm:pt-0 border-t border-emerald-500/30 sm:border-t-0 sm:border-l sm:border-emerald-300 sm:pl-4 shrink-0">
+                    <div className="text-left sm:text-right">
+                      <div className="text-[10px] sm:text-[11px] font-semibold text-emerald-800">Rooftop Area Required</div>
+                      <div className="text-[9px] sm:text-[10px] text-emerald-700 hidden xs:block sm:block">Shadow-free roof space</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm sm:text-base font-bold text-emerald-950 font-mono">~{rooftopAreaSqFt} Sq. Ft.</div>
+                      <div className="text-[9px] text-emerald-700 xs:hidden">Shadow-free space</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1573,28 +1628,35 @@ export default function CreateQuotation() {
               </div>
 
               {/* FIELD ENGINEERING BILL OF MATERIALS (BOM) & LIVE COSTING */}
-              <div className="p-4 sm:p-5 bg-surface-container-low rounded-xl border border-surface-container-high space-y-4">
+              <div className="p-3.5 sm:p-5 bg-surface-container-low rounded-xl border border-surface-container-high space-y-4">
                 {/* Header & Controls Bar */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-surface-container-high">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-surface-container-high">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-500/30">
                       <span className="material-symbols-outlined text-[24px]">format_list_bulleted</span>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-sm sm:text-base text-on-surface">Field Engineering BOM &amp; Costing</h3>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-800 border border-emerald-500/30 uppercase">
+                        <h3 className="font-bold text-sm sm:text-base text-on-surface truncate">Field Engineering BOM &amp; Costing</h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-800 border border-emerald-500/30 uppercase shrink-0">
                           Excel Field Standard
                         </span>
                       </div>
-                      <p className="text-xs text-secondary mt-0.5">
+                      <p className="text-xs text-secondary mt-0.5 truncate hidden sm:block">
                         Interactive component list with dual statutory GST (5% panels/inverters, 18% materials). Editable qty &amp; rates.
                       </p>
                     </div>
                   </div>
 
                   {/* Mode & Kit Presets Bar */}
-                  <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+                  <div className="flex flex-wrap items-center gap-2 self-start xl:self-auto shrink-0">
+                    {/* View Mode Switcher (Cards vs Table) */}
+                    <ViewModeToggle
+                      viewMode={bomViewMode}
+                      onViewModeChange={setBomViewMode}
+                      className="hidden sm:inline-flex"
+                    />
+
                     {/* Pricing Mode Toggle */}
                     <div className="flex items-center p-0.5 rounded-lg bg-surface border border-surface-container-high text-xs">
                       <button
@@ -1632,7 +1694,7 @@ export default function CreateQuotation() {
                           setSelectedKitId(kId);
                           if (kId) handleApplyKitPreset(kId);
                         }}
-                        className="h-8 px-2 rounded-lg bg-surface text-on-surface text-xs font-semibold border border-surface-container-high outline-none cursor-pointer max-w-[150px] truncate"
+                        className="h-8 px-2 rounded-lg bg-surface text-on-surface text-xs font-semibold border border-surface-container-high outline-none cursor-pointer max-w-[130px] sm:max-w-[150px] truncate"
                       >
                         <option value="">-- Load Kit Preset --</option>
                         {(kitsPresets || []).map((k) => (
@@ -1649,119 +1711,266 @@ export default function CreateQuotation() {
                         title="Save current BOM itemization as a reusable kit"
                       >
                         <span className="material-symbols-outlined text-[15px] text-primary">bookmark_add</span>
-                        <span className="hidden sm:inline">Save Kit</span>
+                        <span className="hidden md:inline">Save Kit</span>
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* BOM Items Table */}
-                <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface shadow-xs">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-[#0B2545] text-white font-bold">
-                      <tr>
-                        <th className="py-2.5 px-3 w-10 text-center border-r border-slate-700">#</th>
-                        <th className="py-2.5 px-3 border-r border-slate-700 min-w-[200px]">Product / Material Description</th>
-                        <th className="py-2.5 px-2 text-center w-28 border-r border-slate-700">Qty</th>
-                        <th className="py-2.5 px-2 text-center w-20 border-r border-slate-700">Unit</th>
-                        <th className="py-2.5 px-3 text-right w-28 border-r border-slate-700">Unit Rate (₹)</th>
-                        <th className="py-2.5 px-2 text-center w-16 border-r border-slate-700">GST</th>
-                        <th className="py-2.5 px-3 text-right w-28 border-r border-slate-700">Total (₹)</th>
-                        <th className="py-2.5 px-2 text-center w-10">Act</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-surface-container-high font-medium text-on-surface">
-                      {bomItems.map((item, idx) => {
-                        return (
-                          <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-surface-container-lowest/50' : 'bg-surface'}>
-                            <td className="py-2 px-3 text-center text-secondary font-mono border-r border-surface-container-high/60">
-                              {idx + 1}
-                            </td>
-                            <td className="py-2 px-3 border-r border-surface-container-high/60 min-w-0">
-                              <div className="flex flex-col">
-                                <span className="font-semibold text-on-surface truncate">{item.item}</span>
-                                {item.specs && (
-                                  <span className="text-[10px] text-secondary truncate">{item.specs}</span>
-                                )}
+                {/* DESKTOP / TABLET VIEW: Zero-Clipping Fluid Data Table */}
+                {bomViewMode === 'table' ? (
+                  <div className="hidden md:block rounded-xl border border-surface-container-high bg-surface overflow-x-auto shadow-xs">
+                    <table className="w-full text-left text-xs min-w-[680px]">
+                      <thead className="bg-[#0D1527] text-slate-200 font-semibold border-b border-surface-container-high">
+                        <tr>
+                          <th className="py-2.5 px-2 w-8 text-center text-slate-400">#</th>
+                          <th className="py-2.5 px-3 min-w-[160px]">Product / Material Description</th>
+                          <th className="py-2.5 px-2 text-center w-20">Qty</th>
+                          <th className="py-2.5 px-1.5 text-center w-12 text-slate-400">Unit</th>
+                          <th className="py-2.5 px-2 text-right w-24">Rate (₹)</th>
+                          <th className="py-2.5 px-1.5 text-center w-14">GST</th>
+                          <th className="py-2.5 px-2.5 text-right w-24">Total (₹)</th>
+                          <th className="py-2.5 px-2 text-center w-8 text-slate-400">Act</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-surface-container-high/60 font-medium text-on-surface">
+                        {bomItems.map((item, idx) => {
+                          const itemName = item.name || item.item || item.description || `BOM Material #${idx + 1}`;
+                          const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
+                          const lineTotal = (item.totalWithGst !== undefined && item.totalWithGst > 0)
+                            ? item.totalWithGst
+                            : Math.round((Number(item.qty) || 0) * (Number(item.rate) || 0) * (1 + gst / 100));
+
+                          return (
+                            <tr key={item.id || idx} className={`${idx % 2 === 1 ? 'bg-surface-container-lowest/40' : 'bg-surface'} hover:bg-primary/5 transition-colors`}>
+                              <td className="py-2 px-2 text-center text-secondary font-mono text-[11px]">
+                                {idx + 1}
+                              </td>
+                              <td className="py-2 px-3 min-w-0">
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-semibold text-on-surface text-xs leading-snug">{itemName}</span>
+                                  {item.specs && (
+                                    <span className="text-[10px] text-secondary truncate">{item.specs}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                <div className="flex items-center justify-center">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step={item.unit === 'MTR' ? '5' : '1'}
+                                    value={item.qty}
+                                    onChange={(e) => handleBomQtyChange(item.id, e.target.value)}
+                                    className="w-14 h-7 text-center font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1 text-xs focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+                                  />
+                                </div>
+                              </td>
+                              <td className="py-2 px-1.5 text-center font-mono text-[10px] text-secondary">
+                                {item.unit || 'NOS'}
+                              </td>
+                              <td className="py-2 px-2 text-right">
+                                <div className="relative inline-flex items-center justify-end w-full">
+                                  <span className="text-[10px] text-secondary mr-1 font-bold">₹</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="10"
+                                    value={item.rate}
+                                    onChange={(e) => handleBomRateChange(item.id, e.target.value)}
+                                    className="w-16 h-7 text-right font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1.5 text-xs focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+                                  />
+                                </div>
+                              </td>
+                              <td className="py-2 px-1.5 text-center">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                  gst === 5
+                                    ? 'bg-emerald-500/15 text-emerald-800 border border-emerald-500/30'
+                                    : 'bg-blue-500/15 text-blue-800 border border-blue-500/30'
+                                }`}>
+                                  {gst}%
+                                </span>
+                              </td>
+                              <td className="py-2 px-2.5 text-right font-mono font-bold text-on-surface whitespace-nowrap text-xs">
+                                {formatINR(lineTotal)}
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBomItem(item.id)}
+                                  className="w-6 h-6 rounded hover:bg-error/15 text-secondary hover:text-error flex items-center justify-center cursor-pointer transition-colors"
+                                  title="Remove line item"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">delete</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {/* MOBILE VIEW OR CARD VIEW: Sleek Categorized & Compact Cards */}
+                <div className={`space-y-3 ${bomViewMode === 'table' ? 'md:hidden' : ''}`}>
+                  {/* Mobile Category Quick Filter Tabs */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar border-b border-surface-container-high/60">
+                    {BOM_MOBILE_CATEGORIES.map(cat => {
+                      const count = cat.id === 'all'
+                        ? bomItems.length
+                        : bomItems.filter(i => cat.match.includes(i.category || '')).length;
+                      if (count === 0 && cat.id !== 'all') return null;
+
+                      const isActive = mobileBomCategory === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setMobileBomCategory(cat.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                            isActive
+                              ? 'bg-primary text-white shadow-xs'
+                              : 'bg-surface text-secondary border border-surface-container-high hover:border-primary/40'
+                          }`}
+                        >
+                          <span>{cat.label}</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                            isActive ? 'bg-white/20 text-white' : 'bg-surface-container text-on-surface'
+                          }`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Compact Mobile Items List */}
+                  <div className="space-y-2">
+                    {filteredMobileBomItems.map((item, idx) => {
+                      const itemName = item.name || item.item || item.description || `BOM Material #${idx + 1}`;
+                      const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
+                      const lineTotal = (item.totalWithGst !== undefined && item.totalWithGst > 0)
+                        ? item.totalWithGst
+                        : Math.round((Number(item.qty) || 0) * (Number(item.rate) || 0) * (1 + gst / 100));
+
+                      return (
+                        <div
+                          key={item.id || idx}
+                          className="p-2.5 bg-surface rounded-xl border border-surface-container-high shadow-2xs hover:border-primary/40 transition-all space-y-2"
+                        >
+                          {/* Row 1: Item Title + GST Chip + Line Total + Delete */}
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <span className="w-5 h-5 rounded bg-surface-container text-secondary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <h4 className="font-bold text-xs text-on-surface truncate leading-snug">
+                                  {itemName}
+                                </h4>
                               </div>
-                            </td>
-                            <td className="py-2 px-2 text-center border-r border-surface-container-high/60">
-                              <div className="flex items-center justify-center gap-1">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step={item.unit === 'MTR' ? '5' : '1'}
-                                  value={item.qty}
-                                  onChange={(e) => handleBomQtyChange(item.id, e.target.value)}
-                                  className="w-16 h-7 text-center font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1 text-xs focus:border-primary outline-none"
-                                />
-                              </div>
-                            </td>
-                            <td className="py-2 px-2 text-center font-mono text-[11px] text-secondary border-r border-surface-container-high/60">
-                              {item.unit || 'PCS'}
-                            </td>
-                            <td className="py-2 px-3 text-right border-r border-surface-container-high/60">
-                              <div className="relative inline-flex items-center justify-end w-full">
-                                <span className="text-[11px] text-secondary mr-1">₹</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold ${
+                                gst === 5
+                                  ? 'bg-emerald-500/15 text-emerald-800 border border-emerald-500/30'
+                                  : 'bg-blue-500/15 text-blue-800 border border-blue-500/30'
+                              }`}>
+                                {gst}%
+                              </span>
+                              <span className="font-mono font-bold text-xs text-emerald-950">
+                                {formatINR(lineTotal)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBomItem(item.id)}
+                                className="w-6 h-6 rounded hover:bg-error/15 text-secondary hover:text-error flex items-center justify-center cursor-pointer transition-colors ml-0.5"
+                                title="Remove line item"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">delete</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Row 2: Inline Qty Stepper + Unit Rate in 1 clean line */}
+                          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-surface-container-high/40 text-xs">
+                            {/* Quantity Stepper */}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-bold text-secondary uppercase mr-0.5">Qty:</span>
+                              <button
+                                type="button"
+                                onClick={() => handleBomQtyChange(item.id, Math.max(0, (Number(item.qty) || 0) - (item.unit === 'MTR' ? 5 : 1)))}
+                                className="w-6 h-6 rounded bg-surface-container-lowest border border-surface-container-high text-on-surface hover:bg-surface-container flex items-center justify-center font-bold cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">remove</span>
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                step={item.unit === 'MTR' ? '5' : '1'}
+                                value={item.qty}
+                                onChange={(e) => handleBomQtyChange(item.id, e.target.value)}
+                                className="w-11 h-6 text-center font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded text-xs focus:border-primary outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleBomQtyChange(item.id, (Number(item.qty) || 0) + (item.unit === 'MTR' ? 5 : 1))}
+                                className="w-6 h-6 rounded bg-surface-container-lowest border border-surface-container-high text-on-surface hover:bg-surface-container flex items-center justify-center font-bold cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">add</span>
+                              </button>
+                              <span className="text-[10px] font-bold text-secondary font-mono ml-0.5">{item.unit || 'NOS'}</span>
+                            </div>
+
+                            {/* Unit Rate Input */}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-bold text-secondary uppercase mr-0.5">Rate:</span>
+                              <div className="relative inline-flex items-center">
+                                <span className="text-[10px] text-secondary font-bold mr-0.5">₹</span>
                                 <input
                                   type="number"
                                   min="0"
                                   step="10"
                                   value={item.rate}
                                   onChange={(e) => handleBomRateChange(item.id, e.target.value)}
-                                  className="w-20 h-7 text-right font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1.5 text-xs focus:border-primary outline-none"
+                                  className="w-16 h-6 text-right font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1 text-xs focus:border-primary outline-none"
                                 />
                               </div>
-                            </td>
-                            <td className="py-2 px-2 text-center border-r border-surface-container-high/60">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
-                                item.taxRate === 5
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : 'bg-blue-100 text-blue-800 border border-blue-300'
-                              }`}>
-                                {item.taxRate}%
-                              </span>
-                            </td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-on-surface border-r border-surface-container-high/60 whitespace-nowrap">
-                              {formatINR(item.totalWithGst)}
-                            </td>
-                            <td className="py-2 px-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveBomItem(item.id)}
-                                className="w-6 h-6 rounded hover:bg-error/10 text-secondary hover:text-error flex items-center justify-center cursor-pointer transition-colors"
-                                title="Remove line item"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">delete</span>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {filteredMobileBomItems.length === 0 && (
+                      <div className="text-center py-6 text-secondary text-xs bg-surface rounded-xl border border-surface-container-high">
+                        No items found in this category.
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Add Custom Item Button & Live Category Breakdown Badges */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-2">
                   <button
                     type="button"
                     onClick={() => setShowAddCustomBomItemModal(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary-container bg-primary/10 hover:bg-primary/15 px-3 py-1.5 rounded-lg transition-colors cursor-pointer self-start"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary-container bg-primary/10 hover:bg-primary/15 px-3 py-2 rounded-lg transition-colors cursor-pointer self-start"
                   >
                     <span className="material-symbols-outlined text-[16px]">add_circle</span>
                     <span>+ Add Custom BOM Item / Surcharge</span>
                   </button>
 
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 font-semibold">
-                      5% GST (PV &amp; Inv): <strong>{formatINR(bomTotals.subtotal5GstBase + bomTotals.gst5Total)}</strong>
+                    <span className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 font-semibold">
+                      5% GST (PV, Inv &amp; MC4): <strong>{formatINR(bomTotals.subtotal5GstBase + bomTotals.gst5Total)}</strong>
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-900 font-semibold">
+                    <span className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-900 font-semibold">
                       18% GST (BOS/Structure): <strong>{formatINR(bomTotals.subtotal18GstBase + bomTotals.gst18Total)}</strong>
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-[#0F1B2E] text-white font-mono font-bold">
-                      BOM Total: {formatINR(bomTotals.grossTurnkeyCost)}
+                    <span className="px-3 py-1.5 rounded-lg bg-[#0D1527] text-white font-mono font-bold border border-slate-700 shadow-xs">
+                      BOM Total: <span className="text-emerald-400">{formatINR(bomTotals.grossTurnkeyCost)}</span>
                     </span>
                   </div>
                 </div>
