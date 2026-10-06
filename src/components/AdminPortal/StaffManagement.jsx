@@ -205,13 +205,33 @@ export default function StaffManagement() {
     }
   };
 
-  // New Staff Form State
+  // New Staff Form State (Auto-Incrementing Staff ID)
+  const computeNextStaffId = () => {
+    const existingNums = (staffList || [])
+      .map(s => parseInt(String(s.id || s.staffId || '').replace(/\D/g, ''), 10))
+      .filter(n => !isNaN(n));
+    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 801;
+    return `STF-${String(nextNum).padStart(3, '0')}`;
+  };
+
+  const [newStaffId, setNewStaffId] = useState('');
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffDepartment, setNewStaffDepartment] = useState('Sales');
   const [newStaffRole, setNewStaffRole] = useState('Field Sales Executive');
   const [newStaffPhone, setNewStaffPhone] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('Sunvine@2026');
+
+  const handleOpenAddStaffModal = () => {
+    setNewStaffId(computeNextStaffId());
+    setNewStaffName('');
+    setNewStaffPhone('');
+    setNewStaffEmail('');
+    setNewStaffRole('Field Sales Executive');
+    setNewStaffDepartment('Sales');
+    setNewStaffPassword('Sunvine@2026');
+    setShowAddStaffModal(true);
+  };
 
   // New File Form State
   const [newCustName, setNewCustName] = useState('');
@@ -466,11 +486,7 @@ export default function StaffManagement() {
       addToast('Please enter a valid 10-digit mobile number.', 'error');
       return;
     }
-    const existingNums = (staffList || [])
-      .map(s => parseInt(String(s.id).replace(/\D/g, ''), 10))
-      .filter(n => !isNaN(n));
-    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
-    const newId = `STF-${String(nextNum).padStart(3, '0')}`;
+    const newId = newStaffId.trim() || computeNextStaffId();
     const isVerification = newStaffDepartment === 'Verification' || newStaffRole.toLowerCase().includes('verification');
     const newStaff = {
       id: newId,
@@ -490,6 +506,7 @@ export default function StaffManagement() {
       await addStaff(newStaff);
     }
     setShowAddStaffModal(false);
+    setNewStaffId('');
     setNewStaffName('');
     setNewStaffPhone('');
     setNewStaffEmail('');
@@ -636,7 +653,7 @@ export default function StaffManagement() {
 
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             <button
-              onClick={() => setShowAddStaffModal(true)}
+              onClick={handleOpenAddStaffModal}
               className="h-10 px-3.5 sm:px-4 bg-white border border-[#E4E7EB] hover:border-primary text-on-surface font-label-md rounded-lg hover:bg-surface-container-low transition-all duration-150 flex items-center gap-2 shadow-xs cursor-pointer text-xs sm:text-sm"
               type="button"
             >
@@ -1326,7 +1343,7 @@ export default function StaffManagement() {
                   </p>
                   <button
                     type="button"
-                    onClick={() => (staffList || []).length === 0 ? setShowAddStaffModal(true) : setStaffDepartmentFilter('all')}
+                    onClick={() => (staffList || []).length === 0 ? handleOpenAddStaffModal() : setStaffDepartmentFilter('all')}
                     className="min-h-[44px] px-4 bg-white border border-[#E4E7EB] hover:border-emerald-600 text-slate-900 font-semibold rounded-lg transition-colors flex items-center gap-2 text-xs sm:text-sm cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[18px] text-emerald-600">
@@ -1361,6 +1378,22 @@ export default function StaffManagement() {
             </div>
 
             <form onSubmit={handleCreateStaff} className="p-5 space-y-4">
+              {/* Auto-Incremented Staff ID */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Staff ID <span className="text-[11px] text-emerald-600 font-semibold">(Auto-Incremented)</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffId}
+                  onChange={e => setNewStaffId(e.target.value)}
+                  placeholder="e.g. STF-807"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">Automatically computed from the highest staff number in the database.</p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
@@ -1418,15 +1451,22 @@ export default function StaffManagement() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits) *</label>
-                  <input
-                    type="tel"
-                    required
-                    maxLength={10}
-                    value={newStaffPhone}
-                    onChange={e => setNewStaffPhone(e.target.value.replace(/\D/g, ''))}
-                    placeholder="9825012345"
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                  />
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3 font-mono text-xs font-bold text-slate-600 select-none pointer-events-none flex items-center gap-1 z-10">
+                      <span>+91</span>
+                      <span className="text-slate-300 font-normal">|</span>
+                    </span>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={10}
+                      value={newStaffPhone}
+                      onChange={e => setNewStaffPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      placeholder="9825012345"
+                      className="w-full pl-12 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                      autoComplete="off"
+                    />
+                  </div>
                 </div>
 
                 <div>

@@ -171,8 +171,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
   const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
 
   // Line item breakdown
-  const transportCharge = quotation.transportCharge || 2500;
-  const installationCost = quotation.installationEstimatedCost || Math.round(resolvedCapKW * 2500);
+  const transportCharge = quotation.transportCharge !== undefined ? quotation.transportCharge : 1000;
+  const installationCost = quotation.installationEstimatedCost || Math.round(resolvedCapKW * 2000);
   const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * (quotation.ratePerWp || 18.00));
   const inverterCost = quotation.inverterEstimatedCost || Math.round(resolvedCapKW <= 3 ? 29800 : resolvedCapKW <= 5.5 ? 42000 : resolvedCapKW <= 7 ? 48500 : 72000);
   const structureCost = quotation.structureEstimatedCost || Math.round(resolvedCount * 3200);

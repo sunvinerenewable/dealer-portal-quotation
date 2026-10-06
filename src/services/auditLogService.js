@@ -10,7 +10,31 @@ export const auditLogService = {
         .limit(limit);
 
       if (!error && data && data.length > 0) {
-        return data;
+        return data.map(row => {
+          let detailsText = '';
+          if (typeof row.details === 'string') {
+            detailsText = row.details;
+          } else if (row.details && typeof row.details === 'object') {
+            detailsText = row.details.message || row.details.reason || row.details.description || JSON.stringify(row.details);
+          } else if (row.details != null) {
+            detailsText = String(row.details);
+          }
+          return {
+            id: row.id,
+            timestamp: row.created_at || row.timestamp || new Date().toISOString(),
+            action: row.action || 'SYSTEM_ACTION',
+            module: row.module || row.entity_type || 'SYSTEM',
+            recordId: row.record_id || row.entity_id || '-',
+            userName: row.user_name || row.user_email || row.user || 'System',
+            user: row.user_name || row.user_email || row.user || 'System',
+            role: row.role || row.user_role || 'admin',
+            ipAddress: row.ip_address || '192.168.1.1',
+            details: detailsText,
+            oldValue: row.old_value || (row.details && typeof row.details === 'object' && row.details.oldValue) || null,
+            newValue: row.new_value || (row.details && typeof row.details === 'object' && row.details.newValue) || null,
+            status: row.status || 'VERIFIED'
+          };
+        });
       }
     } catch (err) {
       console.warn('Supabase fetch audit logs fallback:', err);

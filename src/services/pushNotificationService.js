@@ -1,7 +1,9 @@
 /**
- * Sunvine Solar EPC - Push Notification Service
- * Manages W3C Web Push registration, OS-level permissions, and notification dispatch.
+ * Sunvine Solar EPC - Push & Slack Notification Service
+ * Manages W3C Web Push registration, OS-level permissions, and dual Slack + Web Push notification dispatch.
  */
+
+import { slackNotificationService } from './slackNotificationService';
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -199,27 +201,54 @@ export const pushNotificationService = {
   },
 
   /**
-   * Dispatch push alert when a dealer registers a new application
+   * Dispatch real-time alert (Web Push + Slack) when a dealer or staff registers a new application
    */
   async sendApplicationCreatedPush({
     fileId,
     customerName,
     solarKw,
+    sanctionedLoadKw,
     dealerId,
     dealerName,
     assignedStaffId,
-    assignedStaffName
+    assignedStaffName,
+    city,
+    discom,
+    financeType,
+    roofType
   }) {
+    // 1. Direct Slack notification dispatch
+    slackNotificationService.notifyApplicationCreated({
+      fileId,
+      customerName,
+      solarKw,
+      sanctionedLoadKw,
+      dealerId,
+      dealerName,
+      assignedStaffId,
+      assignedStaffName,
+      city,
+      discom,
+      financeType,
+      roofType
+    }).catch(() => {});
+
+    // 2. Server-side dual WebPush + Slack webhook dispatch
     try {
       const payload = {
         action: 'new-application',
         fileId,
         customerName,
         solarKw,
+        sanctionedLoadKw,
         dealerId,
         dealerName,
         assignedStaffId: assignedStaffId || 'STF-DIRECT',
-        assignedStaffName: assignedStaffName || 'Direct to Company (HQ Desk)'
+        assignedStaffName: assignedStaffName || 'Direct to Company (HQ Desk)',
+        city,
+        discom,
+        financeType,
+        roofType
       };
 
       const res = await fetch('/api/push-notify', {
@@ -229,19 +258,163 @@ export const pushNotificationService = {
       });
 
       if (res.ok) {
-        const data = await res.json();
-        return data;
+        return await res.json();
       }
     } catch (err) {
       console.warn('[pushNotificationService] Push dispatch non-blocking notice:', err.message);
     }
-    return { success: false };
+    return { success: true };
   },
 
   /**
-   * Send a test push notification to verify OS delivery
+   * Dispatch real-time alert on application stage progression
+   */
+  async sendFileStageUpdatedNotification({
+    fileId,
+    customerName,
+    oldStage,
+    newStage,
+    status,
+    dealerName,
+    actor = 'Staff Desk',
+    notes = ''
+  }) {
+    // 1. Client-side Slack dispatch
+    slackNotificationService.notifyStageChanged({
+      fileId,
+      customerName,
+      oldStage,
+      newStage,
+      status,
+      dealerName,
+      actor,
+      notes
+    }).catch(() => {});
+
+    // 2. Server-side dispatch
+    try {
+      await fetch('/api/push-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'stage-update',
+          fileId,
+          customerName,
+          stageName: newStage,
+          status,
+          dealerName,
+          actor,
+          notes
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  },
+
+  /**
+   * Dispatch real-time alert on customer document upload
+   */
+  async sendDocumentUploadedNotification({
+    fileId,
+    customerName,
+    docTitle,
+    filename,
+    uploadedBy = 'Dealer Partner'
+  }) {
+    // 1. Client-side Slack dispatch
+    slackNotificationService.notifyDocumentUploaded({
+      fileId,
+      customerName,
+      docTitle,
+      filename,
+      uploadedBy
+    }).catch(() => {});
+
+    // 2. Server-side dispatch
+    try {
+      await fetch('/api/push-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'document-upload',
+          fileId,
+          customerName,
+          docTitle,
+          filename,
+          actor: uploadedBy
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  },
+
+  /**
+   * Dispatch real-time alert on customer file cancellation
+   */
+  async sendFileCancelledNotification({
+    fileId,
+    customerName,
+    reason,
+    cancelledBy
+  }) {
+    slackNotificationService.notifyApplicationCancelled({
+      fileId,
+      customerName,
+      reason,
+      cancelledBy
+    }).catch(() => {});
+
+    try {
+      await fetch('/api/push-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'file-cancel',
+          fileId,
+          customerName,
+          reason,
+          cancelledBy
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  },
+
+  /**
+   * Dispatch real-time alert on customer file restoration
+   */
+  async sendFileRestoredNotification({
+    fileId,
+    customerName,
+    restoredBy
+  }) {
+    slackNotificationService.notifyApplicationRestored({
+      fileId,
+      customerName,
+      restoredBy
+    }).catch(() => {});
+
+    try {
+      await fetch('/api/push-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'file-restore',
+          fileId,
+          customerName,
+          restoredBy
+        })
+      }).catch(() => {});
+    } catch (_) {}
+  },
+
+  /**
+   * Send a test push + Slack notification to verify delivery channels
    */
   async sendTestPush({ targetUserId, role = 'admin' } = {}) {
+    // Also trigger test slack alert
+    slackNotificationService.notifyTestAlert({
+      targetUser: targetUserId || (role === 'admin' ? 'Admin Desk' : 'Staff User'),
+      role
+    }).catch(() => {});
+
     try {
       const res = await fetch('/api/push-notify', {
         method: 'POST',

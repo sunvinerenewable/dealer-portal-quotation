@@ -45,7 +45,8 @@ export default function PricingMaster() {
     capacityBomMatrix,
     updateCapacityBomItemQty,
     updateCapacityBomPreset,
-    getResolvedBom
+    getResolvedBom,
+    inverterBenchmarkMatrix: globalInverterBenchmarks
   } = useApp();
 
   // Initialize tab from URL query param if present (?tab=base|modules|bom|bank|dealer_custom)
@@ -94,7 +95,17 @@ export default function PricingMaster() {
   });
 
   // Dedicated Inverter Sizing & Benchmark Pricing Matrix states (SR-57)
-  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(DEFAULT_INVERTER_BENCHMARK_MATRIX);
+  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => {
+    return Array.isArray(globalInverterBenchmarks) && globalInverterBenchmarks.length > 0
+      ? globalInverterBenchmarks
+      : DEFAULT_INVERTER_BENCHMARK_MATRIX;
+  });
+
+  useEffect(() => {
+    if (Array.isArray(globalInverterBenchmarks) && globalInverterBenchmarks.length > 0) {
+      setInverterBenchmarkMatrix(globalInverterBenchmarks);
+    }
+  }, [globalInverterBenchmarks]);
   const [isInlineEditingInverters, setIsInlineEditingInverters] = useState(false);
   const [showAddInvBenchmarkModal, setShowAddInvBenchmarkModal] = useState(false);
   const [editingInvBenchmarkIdx, setEditingInvBenchmarkIdx] = useState(null);
@@ -837,7 +848,7 @@ ${origin}/?tab=pricing_master
                 </div>
                 <span className="text-[11px] text-secondary truncate">
                   {activeTab === 'base' && 'Official BOS Matrix & Subsidy Rates'}
-                  {activeTab === 'modules' && `${(modulesList?.length || 8) + (invertersList?.length || 6)} Hardware Items Catalog`}
+                  {activeTab === 'modules' && `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Hardware Items Catalog`}
                   {activeTab === 'bom' && `${pdfBomSpecs?.length || 8} Slabs Capacity Presets`}
                   {activeTab === 'bank' && 'Payment Terms & Bank Info'}
                   {activeTab === 'dealer_custom' && `${totalDealersCount} Dealers Custom Margins`}
@@ -875,8 +886,8 @@ ${origin}/?tab=pricing_master
                     id: 'modules',
                     icon: 'solar_power',
                     title: 'Modules & Inverters Master',
-                    subtitle: `${(modulesList?.length || 8) + (invertersList?.length || 6)} Hardware Items`,
-                    badge: `${(modulesList?.length || 8) + (invertersList?.length || 6)} Items`
+                    subtitle: `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Hardware Items`,
+                    badge: `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Items`
                   },
                   {
                     id: 'bom',
@@ -1003,7 +1014,7 @@ ${origin}/?tab=pricing_master
                 ? 'bg-primary text-surface-container-lowest'
                 : 'bg-surface-container text-secondary'
             }`}>
-              {activeTab === 'modules' ? 'Active' : `${(modulesList?.length || 8) + (invertersList?.length || 6)} Items`}
+              {activeTab === 'modules' ? 'Active' : `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Items`}
             </span>
           </button>
 
@@ -2246,7 +2257,7 @@ ${origin}/?tab=pricing_master
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2.5 py-1 rounded-full font-bold">
-                      {modulesList?.length || 5} ALMM Models
+                      {modulesList?.length ?? 0} ALMM Models
                     </span>
                     <button
                       type="button"
@@ -2348,7 +2359,7 @@ ${origin}/?tab=pricing_master
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2.5 py-1 rounded-full font-bold">
-                      {invertersList?.length || 4} Certified Series
+                      {invertersList?.length ?? 0} Certified Series
                     </span>
                     <button
                       type="button"

@@ -207,8 +207,12 @@ export default async function handler(req, res) {
       const isReqVerification = String(reqStaffRole || '').toLowerCase().includes('verification');
 
       try {
-        const sql = 'SELECT id, name, phone, role, department, city, zone, status, password_hash FROM staff_accounts WHERE phone = $1';
-        const qRes = await query(sql, [cleanMobile]);
+        const sql = `
+          SELECT id, name, phone, mobile_number, email, role, department, city, zone, status, password_hash 
+          FROM staff_accounts 
+          WHERE phone = $1 OR mobile_number = $1 OR phone = $2 OR mobile_number = $2
+        `;
+        const qRes = await query(sql, [cleanMobile, `+91${cleanMobile}`]);
         candidates = qRes.rows || [];
       } catch (dbErr) {
         console.error('[auth/login] PostgreSQL staff lookup failed:', dbErr.message);
@@ -216,8 +220,8 @@ export default async function handler(req, res) {
           const db = getSupabaseServiceClient();
           const qRes = await db
             .from('staff_accounts')
-            .select('id, name, phone, role, department, city, zone, status, password_hash')
-            .eq('phone', cleanMobile);
+            .select('id, name, phone, mobile_number, email, role, department, city, zone, status, password_hash')
+            .or(`phone.eq.${cleanMobile},mobile_number.eq.${cleanMobile},phone.eq.+91${cleanMobile},mobile_number.eq.+91${cleanMobile}`);
           candidates = qRes.data || [];
         } catch (supErr) {
           console.error('[auth/login] Supabase staff lookup also failed:', supErr.message);
@@ -293,7 +297,9 @@ export default async function handler(req, res) {
         staff_id: matchedStaff.id,
         role: 'staff',
         name: matchedStaff.name,
-        phone: matchedStaff.phone,
+        phone: matchedStaff.phone || matchedStaff.mobile_number || cleanMobile,
+        mobile: matchedStaff.mobile_number || matchedStaff.phone || cleanMobile,
+        email: matchedStaff.email || `${cleanMobile}@sunvine.in`,
         department: matchedStaff.department,
         city: matchedStaff.city,
         zone: matchedStaff.zone,

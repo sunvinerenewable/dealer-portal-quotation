@@ -263,6 +263,16 @@ export default function MyApplications() {
           await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
         }
         setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+
+        // Dispatch document uploaded alert to Slack & Push
+        pushNotificationService.sendDocumentUploadedNotification({
+          fileId: uploadTargetFile.id,
+          customerName: uploadTargetFile.customerName,
+          docTitle: docKey.toUpperCase().replace(/_/g, ' '),
+          filename: uploadedDocsList.map(d => d.filename).join(', '),
+          uploadedBy: currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer'
+        });
+
         addToast(
           uploadedDocsList.length > 1
             ? `${uploadedDocsList.length} documents added to vault`

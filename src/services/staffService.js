@@ -108,12 +108,12 @@ export const staffService = {
         rating: Number(staff.rating) || 4.9,
         updated_at: new Date().toISOString()
       };
-      const { data, error } = await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' }).select();
+      const { error } = await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' });
       if (error) {
         console.warn('[staffService] Supabase upsert error:', error.message);
         return { success: false, error: error.message };
       }
-      return { success: true, id: staffId, staff: data?.[0] || payload };
+      return { success: true, id: staffId, staff: payload };
     } catch (err) {
       console.error('[staffService] Exception creating staff:', err);
       return { success: false, error: err.message };

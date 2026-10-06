@@ -7,6 +7,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
+    "migrate": "node scripts/run_migrations.js",
     "test": "node --test src/utils/__tests__/*.test.js"
   },
   "engines": {

@@ -535,7 +535,16 @@ export default function AdminSettings() {
   // Dealer Modal Handlers
   const handleOpenAddDealer = () => {
     setEditingDealer(null);
-    const nextCode = `SV-DLR-${String(Math.floor(8000 + Math.random() * 900))}`;
+    const existingNums = (dealersList || [])
+      .map(d => {
+        const codeStr = String(d?.dealer_code || d?.dealerCode || (String(d?.id || '').startsWith('SV-DLR') ? d.id : ''));
+        const match = codeStr.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : null;
+      })
+      .filter(n => n !== null && !isNaN(n) && n > 0 && n < 100000);
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 800;
+    const nextNum = maxNum + 1;
+    const nextCode = `SV-DLR-${String(nextNum).padStart(4, '0')}`;
     setDealerForm({
       id: nextCode,
       dealerCode: nextCode,
@@ -591,6 +600,12 @@ export default function AdminSettings() {
       setError('Valid 10-digit mobile number is required.');
       return;
     }
+    const cleanEmail = (dealerForm.email || '').trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (cleanEmail && !emailRegex.test(cleanEmail)) {
+      setError('Please enter a valid email address (e.g. partner@example.com) or leave it empty.');
+      return;
+    }
     if (!editingDealer && !dealerForm.password.trim()) {
       setError('Initial password is required for new dealer.');
       return;
@@ -607,7 +622,7 @@ export default function AdminSettings() {
           firmName: dealerForm.firmName,
           contactPerson: dealerForm.contactPerson,
           mobile: cleanMobile,
-          email: dealerForm.email || `${cleanMobile}@sunvinedealer.in`,
+          email: dealerForm.email && dealerForm.email.trim() ? dealerForm.email.trim() : null,
           city: dealerForm.city,
           state: dealerForm.state,
           discom: dealerForm.discom,
@@ -626,7 +641,7 @@ export default function AdminSettings() {
           firmName: dealerForm.firmName,
           contactPerson: dealerForm.contactPerson,
           mobile: cleanMobile,
-          email: dealerForm.email || `${cleanMobile}@sunvinedealer.in`,
+          email: dealerForm.email && dealerForm.email.trim() ? dealerForm.email.trim() : null,
           city: dealerForm.city,
           state: dealerForm.state,
           discom: dealerForm.discom,
@@ -653,7 +668,15 @@ export default function AdminSettings() {
   // Staff Modal Handlers
   const handleOpenAddStaff = () => {
     setEditingStaff(null);
-    const nextCode = `STF-${String(staffListState.length + 802).padStart(3, '0')}`;
+    const existingNums = (staffListState || [])
+      .map(s => {
+        const codeStr = String(s?.id || s?.staffId || '');
+        const match = codeStr.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : null;
+      })
+      .filter(n => n !== null && !isNaN(n) && n > 0 && n < 100000);
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 805;
+    const nextCode = `STF-${String(maxNum + 1).padStart(3, '0')}`;
     setStaffForm({
       id: nextCode,
       name: '',
@@ -2089,9 +2112,9 @@ export default function AdminSettings() {
           MODAL: ADD / EDIT ADMIN
           ======================================================== */}
       {showAdminModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden my-auto animate-scaleIn">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600">admin_panel_settings</span>
                 <h3 className="font-bold text-slate-900 text-base">
@@ -2099,81 +2122,84 @@ export default function AdminSettings() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowAdminModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveAdmin} className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Ramesh Patel"
-                  value={adminForm.fullName}
-                  onChange={(e) => setAdminForm(prev => ({ ...prev, fullName: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={handleSaveAdmin} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
                   <input
-                    type="tel"
+                    type="text"
                     required
-                    maxLength={10}
-                    placeholder="8000050580"
-                    value={adminForm.mobileNumber}
-                    onChange={(e) => setAdminForm(prev => ({ ...prev, mobileNumber: e.target.value.replace(/\D/g, '') }))}
+                    placeholder="e.g. Ramesh Patel"
+                    value={adminForm.fullName}
+                    onChange={(e) => setAdminForm(prev => ({ ...prev, fullName: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={10}
+                      placeholder="8000050580"
+                      value={adminForm.mobileNumber}
+                      onChange={(e) => setAdminForm(prev => ({ ...prev, mobileNumber: e.target.value.replace(/\D/g, '') }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+                    <select
+                      value={adminForm.role}
+                      onChange={(e) => setAdminForm(prev => ({ ...prev, role: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 cursor-pointer"
+                    >
+                      <option value="super_admin">Super Admin Desk</option>
+                      <option value="admin">Operations Admin</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="admin@sunvinerenewable.com"
+                    value={adminForm.email}
+                    onChange={(e) => setAdminForm(prev => ({ ...prev, email: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
-                  <select
-                    value={adminForm.role}
-                    onChange={(e) => setAdminForm(prev => ({ ...prev, role: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 cursor-pointer"
-                  >
-                    <option value="super_admin">Super Admin Desk</option>
-                    <option value="admin">Operations Admin</option>
-                  </select>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {editingAdmin ? 'New Password (optional)' : 'Initial Password'}
+                  </label>
+                  <input
+                    type="text"
+                    required={!editingAdmin}
+                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. admin123'}
+                    value={adminForm.password}
+                    onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="admin@sunvinerenewable.com"
-                  value={adminForm.email}
-                  onChange={(e) => setAdminForm(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {editingAdmin ? 'New Password (optional)' : 'Initial Password'}
-                </label>
-                <input
-                  type="text"
-                  required={!editingAdmin}
-                  placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. admin123'}
-                  value={adminForm.password}
-                  onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowAdminModal(false)}
@@ -2199,9 +2225,9 @@ export default function AdminSettings() {
           MODAL: ADD / EDIT DEALER
           ======================================================== */}
       {showDealerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden my-auto animate-scaleIn">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-amber-600">apartment</span>
                 <h3 className="font-bold text-slate-900 text-base">
@@ -2209,218 +2235,228 @@ export default function AdminSettings() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowDealerModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveDealer} className="p-5 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Dealer Code</label>
-                  <input
-                    type="text"
-                    required
-                    disabled={Boolean(editingDealer)}
-                    value={dealerForm.dealerCode}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, dealerCode: e.target.value.toUpperCase() }))}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500 disabled:opacity-60"
-                  />
+            <form onSubmit={handleSaveDealer} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Dealer Code</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={Boolean(editingDealer)}
+                      value={dealerForm.dealerCode}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, dealerCode: e.target.value.toUpperCase() }))}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500 disabled:opacity-60"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Partner Tier</label>
+                    <select
+                      value={dealerForm.tier}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, tier: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      <option value="Diamond EPC">Diamond EPC</option>
+                      <option value="Platinum EPC">Platinum EPC</option>
+                      <option value="Gold EPC">Gold EPC</option>
+                      <option value="Silver Installer">Silver Installer</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Partner Tier</label>
-                  <select
-                    value={dealerForm.tier}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, tier: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="Diamond EPC">Diamond EPC</option>
-                    <option value="Platinum EPC">Platinum EPC</option>
-                    <option value="Gold EPC">Gold EPC</option>
-                    <option value="Silver Installer">Silver Installer</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Firm / Agency Trade Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Saur Urja Solutions"
-                  value={dealerForm.firmName}
-                  onChange={(e) => setDealerForm(prev => ({ ...prev, firmName: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Person</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Firm / Agency Trade Name</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Nilesh Shah"
-                    value={dealerForm.contactPerson}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, contactPerson: e.target.value }))}
+                    placeholder="e.g. Saur Urja Solutions"
+                    value={dealerForm.firmName}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, firmName: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
-                  <input
-                    type="tel"
-                    required
-                    maxLength={10}
-                    placeholder="8000050580"
-                    value={dealerForm.mobile}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, '') }))}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Person</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Nilesh Shah"
+                      value={dealerForm.contactPerson}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, contactPerson: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">City</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ahmedabad"
-                    value={dealerForm.city}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, city: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">DISCOM</label>
-                  <select
-                    value={dealerForm.discom}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, discom: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="UGVCL">UGVCL (Uttar Gujarat)</option>
-                    <option value="PGVCL">PGVCL (Paschim Gujarat)</option>
-                    <option value="DGVCL">DGVCL (Dakshin Gujarat)</option>
-                    <option value="MGVCL">MGVCL (Madhya Gujarat)</option>
-                    <option value="Torrent Power">Torrent Power</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Official Business Email <span className="text-xs text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <input
-                  type="email"
-                  placeholder="partner@sunvinedealer.in"
-                  value={dealerForm.email}
-                  onChange={(e) => setDealerForm(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              {/* Sales Channel & Salesman Alignment */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    Sales Channel &amp; Account Alignment
-                  </label>
-                  <span className="text-[11px] text-slate-400">Direct to HQ or Assigned Salesman</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setDealerForm(prev => ({
-                      ...prev,
-                      assignedStaffId: 'STF-DIRECT',
-                      assignedStaffName: 'Direct to Company (HQ Desk)'
-                    }))}
-                    className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
-                      dealerForm.assignedStaffId === 'STF-DIRECT'
-                        ? 'bg-indigo-50/70 border-indigo-400 ring-2 ring-indigo-400/20 text-indigo-900'
-                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-lg text-indigo-600 mt-0.5">bolt</span>
-                    <div>
-                      <div className="text-xs font-bold">Direct to Company</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">Deals with Sunvine HQ directly</div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 font-mono text-xs font-bold text-slate-600 select-none pointer-events-none flex items-center gap-1 z-10">
+                        <span>+91</span>
+                        <span className="text-slate-300 font-normal">|</span>
+                      </span>
+                      <input
+                        type="tel"
+                        required
+                        maxLength={10}
+                        placeholder="8000050580"
+                        value={dealerForm.mobile}
+                        onChange={(e) => setDealerForm(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                        className="w-full pl-12 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                        autoComplete="off"
+                      />
                     </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const firstStaff = (staffListState || []).find(s => s.department === 'Sales') || (staffListState || [])[0];
-                      setDealerForm(prev => ({
-                        ...prev,
-                        assignedStaffId: firstStaff?.id || 'STF-801',
-                        assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
-                      }));
-                    }}
-                    className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
-                      dealerForm.assignedStaffId !== 'STF-DIRECT'
-                        ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-400/20 text-emerald-900'
-                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-lg text-emerald-600 mt-0.5">person</span>
-                    <div>
-                      <div className="text-xs font-bold">Field Sales Executive</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">Managed by field sales staff</div>
-                    </div>
-                  </button>
+                  </div>
                 </div>
 
-                {dealerForm.assignedStaffId !== 'STF-DIRECT' && (
-                  <div className="pt-1.5 animate-fadeIn">
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Select Assigned Sales Representative</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">City</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ahmedabad"
+                      value={dealerForm.city}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, city: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">DISCOM</label>
                     <select
-                      value={dealerForm.assignedStaffId}
-                      onChange={(e) => {
-                        const sId = e.target.value;
-                        const match = (staffListState || []).find(s => s.id === sId);
-                        setDealerForm(prev => ({
-                          ...prev,
-                          assignedStaffId: sId,
-                          assignedStaffName: match?.name || 'Sunvine Sales Staff'
-                        }));
-                      }}
+                      value={dealerForm.discom}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, discom: e.target.value }))}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
                     >
-                      {(staffListState || []).map(s => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
-                        </option>
-                      ))}
+                      <option value="UGVCL">UGVCL (Uttar Gujarat)</option>
+                      <option value="PGVCL">PGVCL (Paschim Gujarat)</option>
+                      <option value="DGVCL">DGVCL (Dakshin Gujarat)</option>
+                      <option value="MGVCL">MGVCL (Madhya Gujarat)</option>
+                      <option value="Torrent Power">Torrent Power</option>
                     </select>
                   </div>
-                )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Official Business Email <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="partner@sunvinedealer.in"
+                    value={dealerForm.email}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                {/* Sales Channel & Salesman Alignment */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Sales Channel &amp; Account Alignment
+                    </label>
+                    <span className="text-[11px] text-slate-400">Direct to HQ or Assigned Salesman</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setDealerForm(prev => ({
+                        ...prev,
+                        assignedStaffId: 'STF-DIRECT',
+                        assignedStaffName: 'Direct to Company (HQ Desk)'
+                      }))}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                        dealerForm.assignedStaffId === 'STF-DIRECT'
+                          ? 'bg-indigo-50/70 border-indigo-400 ring-2 ring-indigo-400/20 text-indigo-900'
+                          : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-lg text-indigo-600 mt-0.5">bolt</span>
+                      <div>
+                        <div className="text-xs font-bold">Direct to Company</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">Deals with Sunvine HQ directly</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const firstStaff = (staffListState || []).find(s => s.department === 'Sales') || (staffListState || [])[0];
+                        setDealerForm(prev => ({
+                          ...prev,
+                          assignedStaffId: firstStaff?.id || 'STF-801',
+                          assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
+                        }));
+                      }}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                        dealerForm.assignedStaffId !== 'STF-DIRECT'
+                          ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-400/20 text-emerald-900'
+                          : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-lg text-emerald-600 mt-0.5">person</span>
+                      <div>
+                        <div className="text-xs font-bold">Field Sales Executive</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">Managed by field sales staff</div>
+                      </div>
+                    </button>
+                  </div>
+
+                  {dealerForm.assignedStaffId !== 'STF-DIRECT' && (
+                    <div className="pt-1.5 animate-fadeIn">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Select Assigned Sales Representative</label>
+                      <select
+                        value={dealerForm.assignedStaffId}
+                        onChange={(e) => {
+                          const sId = e.target.value;
+                          const match = (staffListState || []).find(s => s.id === sId);
+                          setDealerForm(prev => ({
+                            ...prev,
+                            assignedStaffId: sId,
+                            assignedStaffName: match?.name || 'Sunvine Sales Staff'
+                          }));
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                      >
+                        {(staffListState || []).map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {editingDealer ? 'New Password (optional)' : 'Initial Password'}
+                  </label>
+                  <input
+                    type="text"
+                    required={!editingDealer}
+                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'dealer123'}
+                    value={dealerForm.password}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {editingDealer ? 'New Password (optional)' : 'Initial Password'}
-                </label>
-                <input
-                  type="text"
-                  required={!editingDealer}
-                  placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'dealer123'}
-                  value={dealerForm.password}
-                  onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowDealerModal(false)}
@@ -2446,9 +2482,9 @@ export default function AdminSettings() {
           MODAL: ADD / EDIT STAFF
           ======================================================== */}
       {showStaffModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden my-auto animate-scaleIn">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600">group_add</span>
                 <h3 className="font-bold text-slate-900 text-base">
@@ -2456,124 +2492,127 @@ export default function AdminSettings() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowStaffModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveStaff} className="p-5 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={handleSaveStaff} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Staff ID</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={Boolean(editingStaff)}
+                      placeholder="STF-802"
+                      value={staffForm.id}
+                      onChange={(e) => setStaffForm(prev => ({ ...prev, id: e.target.value.toUpperCase() }))}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500 disabled:opacity-60"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                    <select
+                      value={staffForm.department}
+                      onChange={(e) => {
+                        const dept = e.target.value;
+                        setStaffForm(prev => ({
+                          ...prev,
+                          department: dept,
+                          role: dept === 'Verification' ? 'Field Verification Officer' : 'Senior Solar Field Executive'
+                        }));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      <option value="Sales">Field Sales</option>
+                      <option value="Verification">Verification Desk</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Staff ID</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
                   <input
                     type="text"
                     required
-                    disabled={Boolean(editingStaff)}
-                    placeholder="STF-802"
-                    value={staffForm.id}
-                    onChange={(e) => setStaffForm(prev => ({ ...prev, id: e.target.value.toUpperCase() }))}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500 disabled:opacity-60"
+                    placeholder="e.g. Nilesh Vaghela"
+                    value={staffForm.name}
+                    onChange={(e) => setStaffForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
-                  <select
-                    value={staffForm.department}
-                    onChange={(e) => {
-                      const dept = e.target.value;
-                      setStaffForm(prev => ({
-                        ...prev,
-                        department: dept,
-                        role: dept === 'Verification' ? 'Field Verification Officer' : 'Senior Solar Field Executive'
-                      }));
-                    }}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="Sales">Field Sales</option>
-                    <option value="Verification">Verification Desk</option>
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={10}
+                      placeholder="8000050580"
+                      value={staffForm.phone}
+                      onChange={(e) => setStaffForm(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Designation / Role</label>
+                    <input
+                      type="text"
+                      list="adminSettingsRolesList"
+                      required
+                      value={staffForm.role}
+                      onChange={(e) => setStaffForm(prev => ({ ...prev, role: e.target.value }))}
+                      placeholder="Type or select designation..."
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                    />
+                    <datalist id="adminSettingsRolesList">
+                      <option value="Field Sales Executive" />
+                      <option value="Area Sales Manager" />
+                      <option value="Regional Solar Lead" />
+                      <option value="Senior Solar Field Executive" />
+                      <option value="Verification Desk Officer" />
+                      <option value="Senior Technical Auditor" />
+                      <option value="Document Verification Lead" />
+                    </datalist>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Nilesh Vaghela"
-                  value={staffForm.name}
-                  onChange={(e) => setStaffForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
                   <input
-                    type="tel"
-                    required
-                    maxLength={10}
-                    placeholder="8000050580"
-                    value={staffForm.phone}
-                    onChange={(e) => setStaffForm(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
+                    type="email"
+                    placeholder="staff@sunvine.in"
+                    value={staffForm.email}
+                    onChange={(e) => setStaffForm(prev => ({ ...prev, email: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Designation / Role</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {editingStaff ? 'New Password (optional)' : 'Initial Password'}
+                  </label>
                   <input
                     type="text"
-                    list="adminSettingsRolesList"
-                    required
-                    value={staffForm.role}
-                    onChange={(e) => setStaffForm(prev => ({ ...prev, role: e.target.value }))}
-                    placeholder="Type or select designation..."
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                    required={!editingStaff}
+                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : (staffForm.department === 'Verification' ? 'desk123' : 'staff123')}
+                    value={staffForm.password}
+                    onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
-                  <datalist id="adminSettingsRolesList">
-                    <option value="Field Sales Executive" />
-                    <option value="Area Sales Manager" />
-                    <option value="Regional Solar Lead" />
-                    <option value="Senior Solar Field Executive" />
-                    <option value="Verification Desk Officer" />
-                    <option value="Senior Technical Auditor" />
-                    <option value="Document Verification Lead" />
-                  </datalist>
+                  <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  placeholder="staff@sunvine.in"
-                  value={staffForm.email}
-                  onChange={(e) => setStaffForm(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {editingStaff ? 'New Password (optional)' : 'Initial Password'}
-                </label>
-                <input
-                  type="text"
-                  required={!editingStaff}
-                  placeholder={editingStaff ? 'Leave blank to keep unchanged' : (staffForm.department === 'Verification' ? 'desk123' : 'staff123')}
-                  value={staffForm.password}
-                  onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowStaffModal(false)}
@@ -2729,9 +2768,9 @@ export default function AdminSettings() {
           MODAL: ADD / EDIT MASTER DOCUMENT TYPE
           ======================================================== */}
       {showDocModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden my-auto animate-scaleIn">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600">note_add</span>
                 <h3 className="font-bold text-slate-900 text-base">
@@ -2739,110 +2778,113 @@ export default function AdminSettings() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setShowDocModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveDoc} className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Document Title / Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. CEI Electrical Safety Approval"
-                  value={docForm.label}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setDocForm(prev => ({
-                      ...prev,
-                      label: val,
-                      key: (!editingDoc && !isKeyManuallyEdited) ? formatDocumentKey(val) : prev.key
-                    }));
-                  }}
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={handleSaveDoc} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-700">Unique Key Identifier</label>
-                    {!editingDoc && !isKeyManuallyEdited && docForm.key && (
-                      <span className="text-[10px] text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                        Auto-generated
-                      </span>
-                    )}
-                  </div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Document Title / Name</label>
                   <input
                     type="text"
                     required
-                    disabled={Boolean(editingDoc)}
-                    placeholder="e.g. ceiApproval"
-                    value={docForm.key}
+                    placeholder="e.g. CEI Electrical Safety Approval"
+                    value={docForm.label}
                     onChange={(e) => {
-                      const val = e.target.value.replace(/\s+/g, '');
-                      if (!val) {
-                        setIsKeyManuallyEdited(false);
-                        setDocForm(prev => ({ ...prev, key: formatDocumentKey(prev.label) }));
-                      } else {
-                        setIsKeyManuallyEdited(true);
-                        setDocForm(prev => ({ ...prev, key: val }));
-                      }
+                      const val = e.target.value;
+                      setDocForm(prev => ({
+                        ...prev,
+                        label: val,
+                        key: (!editingDoc && !isKeyManuallyEdited) ? formatDocumentKey(val) : prev.key
+                      }));
                     }}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Unique database identifier &amp; storage prefix</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">Unique Key Identifier</label>
+                      {!editingDoc && !isKeyManuallyEdited && docForm.key && (
+                        <span className="text-[10px] text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          Auto-generated
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      disabled={Boolean(editingDoc)}
+                      placeholder="e.g. ceiApproval"
+                      value={docForm.key}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\s+/g, '');
+                        if (!val) {
+                          setIsKeyManuallyEdited(false);
+                          setDocForm(prev => ({ ...prev, key: formatDocumentKey(prev.label) }));
+                        } else {
+                          setIsKeyManuallyEdited(true);
+                          setDocForm(prev => ({ ...prev, key: val }));
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 disabled:bg-slate-100 disabled:text-slate-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Unique database identifier &amp; storage prefix</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Group Category</label>
+                    <select
+                      value={docForm.category}
+                      onChange={(e) => setDocForm(prev => ({ ...prev, category: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      {DOC_CATEGORY_GROUPS.map(g => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Group Category</label>
-                  <select
-                    value={docForm.category}
-                    onChange={(e) => setDocForm(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    {DOC_CATEGORY_GROUPS.map(g => (
-                      <option key={g} value={g}>{g}</option>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Select Icon</label>
+                  <div className="flex items-center gap-1.5 flex-wrap p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-h-28 overflow-y-auto">
+                    {DOC_ICONS.map(ic => (
+                      <button
+                        key={ic}
+                        type="button"
+                        onClick={() => setDocForm(prev => ({ ...prev, icon: ic }))}
+                        className={`p-2 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                          docForm.icon === ic
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-400'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-lg">{ic}</span>
+                      </button>
                     ))}
-                  </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Instructions / Description</label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Chief Electrical Inspectorate clearance certificate copy for >10kW solar system."
+                    value={docForm.description}
+                    onChange={(e) => setDocForm(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Select Icon</label>
-                <div className="flex items-center gap-1.5 flex-wrap p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-h-28 overflow-y-auto">
-                  {DOC_ICONS.map(ic => (
-                    <button
-                      key={ic}
-                      type="button"
-                      onClick={() => setDocForm(prev => ({ ...prev, icon: ic }))}
-                      className={`p-2 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                        docForm.icon === ic
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-400'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-lg">{ic}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Instructions / Description</label>
-                <textarea
-                  rows={2}
-                  placeholder="e.g. Chief Electrical Inspectorate clearance certificate copy for >10kW solar system."
-                  value={docForm.description}
-                  onChange={(e) => setDocForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowDocModal(false)}

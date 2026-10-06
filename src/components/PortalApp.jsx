@@ -179,7 +179,7 @@ function PortalContent() {
         return <DocumentationHub />;
       case 'profile':
       case 'dealer_settings':
-        return <DealerSettings />;
+        return role === 'admin' ? <AdminSettings /> : <DealerDashboard />;
       default:
         return <DealerDashboard />;
     }

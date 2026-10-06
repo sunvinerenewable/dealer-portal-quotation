@@ -130,7 +130,7 @@ export const dealerService = {
         firm_name: dealer.firmName || 'Gujarat Solar EPC',
         contact_person: dealer.contactPerson || 'Authorized Partner',
         mobile_number: cleanPhone,
-        email: dealer.email || `${cleanPhone}@sunvinedealer.in`,
+        email: (dealer.email && String(dealer.email).trim()) ? String(dealer.email).trim() : null,
         password_hash: passwordHash,
         city: dealer.city || 'Ahmedabad',
         state: dealer.state || 'Gujarat',
@@ -182,7 +182,9 @@ export const dealerService = {
     if (fields.mobile !== undefined || fields.mobileNumber !== undefined) {
       updatePayload.mobile_number = String(fields.mobile || fields.mobileNumber).replace(/\D/g, '').slice(-10);
     }
-    if (fields.email !== undefined) updatePayload.email = fields.email;
+    if (fields.email !== undefined) {
+      updatePayload.email = (fields.email && String(fields.email).trim()) ? String(fields.email).trim() : null;
+    }
     if (fields.city !== undefined) updatePayload.city = fields.city;
     if (fields.state !== undefined) updatePayload.state = fields.state;
     if (fields.discom !== undefined) updatePayload.discom = fields.discom;
@@ -221,7 +223,7 @@ export const dealerService = {
     }
 
     // Attempt server-side credential update if sensitive auth fields or assigned staff changed
-    if (fields.password || fields.accessCode || fields.mobile || fields.mobileNumber || fields.email || fields.assignedStaffId) {
+    if (fields.password || fields.accessCode || fields.mobile || fields.mobileNumber || fields.email !== undefined || fields.assignedStaffId) {
       try {
         await fetch('/api/auth/manage-credentials', {
           method: 'POST',
@@ -231,7 +233,7 @@ export const dealerService = {
             action: 'update-dealer-credentials',
             payload: {
               dealerCode: dealerCodeOrId,
-              email: fields.email,
+              email: (fields.email && String(fields.email).trim()) ? String(fields.email).trim() : null,
               mobile: updatePayload.mobile_number,
               password: fields.password || fields.accessCode,
               firmName: fields.firmName,
@@ -246,15 +248,12 @@ export const dealerService = {
     }
 
     try {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(dealerCodeOrId || ''));
-      let query = supabase.from('dealer_accounts').update(updatePayload);
-      if (isUuid) {
-        query = query.eq('id', dealerCodeOrId);
-      } else {
-        query = query.eq('dealer_code', dealerCodeOrId);
-      }
-
-      const { data, error } = await query;
+      const targetCode = String(dealerCodeOrId || '').trim();
+      const cleanCode = targetCode.replace(/^#/, '');
+      const { data, error } = await supabase
+        .from('dealer_accounts')
+        .update(updatePayload)
+        .or(`dealer_code.eq.${targetCode},dealer_code.eq.${cleanCode},id.eq.${targetCode},id.eq.${cleanCode},dealer_code.eq.#${cleanCode}`);
 
       if (error) {
         console.warn('[dealerService] Update dealer warning:', error.message);

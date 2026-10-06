@@ -73,7 +73,6 @@ export default function Navigation() {
     { id: 'dealer_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
     { id: 'docs', label: 'Agreements & Docs', mobileLabel: 'Docs', icon: 'description' },
-    { id: 'dealer_settings', label: 'Settings', mobileLabel: 'Settings', icon: 'settings' },
   ];
 
   const adminMenu = [
@@ -215,8 +214,8 @@ export default function Navigation() {
                 }`}
             >
               <img
-                src={currentDealer?.avatar || '/dealer_avatar.jpg'}
-                alt="Dealer Avatar"
+                src={role === 'staff' ? (currentStaff?.avatar || '/dealer_avatar.jpg') : (currentDealer?.avatar || '/dealer_avatar.jpg')}
+                alt="Avatar"
                 className="w-8 h-8 rounded-full object-cover shadow-xs border border-surface-container-high shrink-0 ring-1 ring-primary/30"
               />
               <div className="hidden sm:flex flex-col text-left max-w-[90px] md:max-w-[120px] lg:max-w-[180px] truncate">
@@ -248,26 +247,36 @@ export default function Navigation() {
               <div className="absolute right-0 mt-2 w-56 bg-surface-container-lowest/95 backdrop-blur-xl rounded-2xl shadow-xl border border-surface-container-high/80 p-1.5 z-50 animate-dropdown-enter ring-1 ring-black/5">
                 <div className="px-3.5 py-2.5 mb-1 border-b border-surface-container-high/60 bg-surface-container-low/40 rounded-xl">
                   <p className="font-label-md text-on-surface text-xs font-bold truncate">
-                    {role === 'admin' ? 'System Admin' : currentDealer?.contactPerson || 'Authorized Partner'}
+                    {role === 'admin'
+                      ? 'System Admin'
+                      : role === 'staff'
+                        ? currentStaff?.name || 'Field Solar Executive'
+                        : currentDealer?.contactPerson || currentDealer?.firmName || 'Authorized Partner'}
                   </p>
                   <p className="font-body-sm text-secondary text-[11px] truncate">
-                    {role === 'admin' ? 'admin@sunvine.in' : currentDealer?.email || 'dealer@sunvine.in'}
+                    {role === 'admin'
+                      ? 'admin@sunvine.in'
+                      : role === 'staff'
+                        ? currentStaff?.email || (currentStaff?.phone ? `+91 ${currentStaff.phone}` : 'staff@sunvine.in')
+                        : currentDealer?.email || (currentDealer?.mobile ? `+91 ${currentDealer.mobile}` : 'dealer@sunvine.in')}
                   </p>
                 </div>
 
                 <div className="space-y-0.5">
-                  {/* Account Settings Option for both Dealer & Admin */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleMenuClick(role === 'admin' ? 'admin_settings' : 'dealer_settings');
-                      setDropdownOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-on-surface hover:bg-primary/10 hover:text-primary active:scale-[0.98] cursor-pointer transition-all duration-150"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">settings</span>
-                    <span>{role === 'admin' ? 'Governance Settings' : 'Account Settings'}</span>
-                  </button>
+                  {/* Governance Settings Option: STRICTLY FOR ADMIN ONLY */}
+                  {role === 'admin' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleMenuClick('admin_settings');
+                        setDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-on-surface hover:bg-primary/10 hover:text-primary active:scale-[0.98] cursor-pointer transition-all duration-150"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">settings</span>
+                      <span>Governance Settings</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -340,19 +349,32 @@ export default function Navigation() {
             </button>
           </div>
 
-          <div
-            onClick={() => {
-              handleMenuClick(role === 'admin' ? 'admin_settings' : 'dealer_settings');
-            }}
-            className="relative flex items-center justify-center p-0.5 rounded-full ring-1 ring-primary/40 cursor-pointer"
-            title="Profile & Settings"
-          >
-            <img
-              alt="Profile"
-              className="w-7 h-7 rounded-full object-cover"
-              src={currentDealer?.avatar || '/dealer_avatar.jpg'}
-            />
-          </div>
+          {role === 'admin' ? (
+            <div
+              onClick={() => {
+                handleMenuClick('admin_settings');
+              }}
+              className="relative flex items-center justify-center p-0.5 rounded-full ring-1 ring-primary/40 cursor-pointer"
+              title="Admin Settings"
+            >
+              <img
+                alt="Profile"
+                className="w-7 h-7 rounded-full object-cover"
+                src="/dealer_avatar.jpg"
+              />
+            </div>
+          ) : (
+            <div
+              className="relative flex items-center justify-center p-0.5 rounded-full ring-1 ring-primary/40"
+              title={role === 'staff' ? (currentStaff?.name || 'Staff') : (currentDealer?.contactPerson || 'Dealer')}
+            >
+              <img
+                alt="Profile"
+                className="w-7 h-7 rounded-full object-cover"
+                src={role === 'staff' ? (currentStaff?.avatar || '/dealer_avatar.jpg') : (currentDealer?.avatar || '/dealer_avatar.jpg')}
+              />
+            </div>
+          )}
           <button
             aria-label="Logout"
             className="w-8 h-8 flex items-center justify-center rounded-full text-secondary hover:text-error transition-colors cursor-pointer"

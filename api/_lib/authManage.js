@@ -158,9 +158,10 @@ export default async function handler(req, res) {
           params.push(passwordHash);
         }
 
-        if (email) {
+        if (email !== undefined) {
+          const cleanEmailVal = (email && String(email).trim()) ? String(email).trim() : null;
           updates.push(`email = $${idx++}`);
-          params.push(email.trim());
+          params.push(cleanEmailVal);
         }
 
         if (firmName) {
@@ -242,44 +243,89 @@ export default async function handler(req, res) {
         const cleanEmail = email || `${cleanPhone}@sunvine.in`;
         const cleanStatus = (status || 'active').toLowerCase();
 
-        const sql = `
-          INSERT INTO staff_accounts (
-            id, name, phone, mobile_number, email, role, department, zone, city,
-            status, password_hash, onboarded_date, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TO_CHAR(NOW(), 'YYYY-MM-DD'), NOW(), NOW())
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            phone = EXCLUDED.phone,
-            mobile_number = EXCLUDED.mobile_number,
-            email = EXCLUDED.email,
-            role = EXCLUDED.role,
-            department = EXCLUDED.department,
-            zone = EXCLUDED.zone,
-            city = EXCLUDED.city,
-            status = EXCLUDED.status,
-            password_hash = EXCLUDED.password_hash,
-            updated_at = NOW()
-          RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
-        `;
+        // Check if an account already exists with this phone or ID
+        let existingId = null;
+        try {
+          const checkRes = await query(
+            'SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1 OR id = $2 LIMIT 1',
+            [cleanPhone, staffId]
+          );
+          if (checkRes.rows && checkRes.rows.length > 0) {
+            existingId = checkRes.rows[0].id;
+          }
+        } catch (_) {}
 
-        const qRes = await query(sql, [
-          staffId,
-          name.trim(),
-          cleanPhone,
-          cleanPhone,
-          cleanEmail,
-          staffRole,
-          finalDepartment,
-          zone || 'Gujarat',
-          city || 'Ahmedabad',
-          cleanStatus,
-          passwordHash
-        ]);
+        let staffRecord = null;
+        if (existingId) {
+          const updateSql = `
+            UPDATE staff_accounts SET
+              name = $1,
+              phone = $2,
+              mobile_number = $2,
+              email = $3,
+              role = $4,
+              department = $5,
+              zone = $6,
+              city = $7,
+              status = $8,
+              password_hash = $9,
+              updated_at = NOW()
+            WHERE id = $10
+            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
+          `;
+          const qRes = await query(updateSql, [
+            name.trim(),
+            cleanPhone,
+            cleanEmail,
+            staffRole,
+            finalDepartment,
+            zone || 'Gujarat',
+            city || 'Ahmedabad',
+            cleanStatus,
+            passwordHash,
+            existingId
+          ]);
+          staffRecord = qRes.rows?.[0];
+        } else {
+          const insertSql = `
+            INSERT INTO staff_accounts (
+              id, name, phone, mobile_number, email, role, department, zone, city,
+              status, password_hash, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              phone = EXCLUDED.phone,
+              mobile_number = EXCLUDED.mobile_number,
+              email = EXCLUDED.email,
+              role = EXCLUDED.role,
+              department = EXCLUDED.department,
+              zone = EXCLUDED.zone,
+              city = EXCLUDED.city,
+              status = EXCLUDED.status,
+              password_hash = EXCLUDED.password_hash,
+              updated_at = NOW()
+            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
+          `;
+          const qRes = await query(insertSql, [
+            staffId,
+            name.trim(),
+            cleanPhone,
+            cleanPhone,
+            cleanEmail,
+            staffRole,
+            finalDepartment,
+            zone || 'Gujarat',
+            city || 'Ahmedabad',
+            cleanStatus,
+            passwordHash
+          ]);
+          staffRecord = qRes.rows?.[0];
+        }
 
         return res.status(200).json({
           success: true,
           message: `${isVerification ? 'Verification Desk' : 'Staff'} account created successfully.`,
-          staff: qRes.rows[0]
+          staff: staffRecord || { id: staffId, name: name.trim(), phone: cleanPhone, email: cleanEmail, role: staffRole }
         });
       }
 
@@ -308,9 +354,10 @@ export default async function handler(req, res) {
           params.push(cleanPhone);
         }
 
-        if (email) {
+        if (email !== undefined) {
+          const cleanStaffEmail = (email && String(email).trim()) ? String(email).trim() : null;
           updates.push(`email = $${idx++}`);
-          params.push(email.trim());
+          params.push(cleanStaffEmail);
         }
 
         if (role) {

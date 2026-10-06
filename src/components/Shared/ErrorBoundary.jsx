@@ -1,4 +1,5 @@
 import React from 'react';
+import { reportCrash } from '../../services/crashReporter.js';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -19,6 +20,12 @@ export default class ErrorBoundary extends React.Component {
     };
 
     console.error('[Sunvine Error Boundary Caught]:', errorDetails);
+
+    // Send instant crash alert to Slack
+    reportCrash(error, {
+      type: 'ReactErrorBoundaryCrash',
+      componentStack: errorInfo?.componentStack
+    });
 
     try {
       localStorage.setItem('sunvine_last_error', JSON.stringify(errorDetails));

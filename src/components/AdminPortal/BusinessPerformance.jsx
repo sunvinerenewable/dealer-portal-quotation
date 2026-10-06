@@ -158,7 +158,7 @@ export default function BusinessPerformance() {
       </div>
 
       {/* 2. Top Metric Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Total Quotations</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-on-surface mt-1 block">
@@ -170,12 +170,22 @@ export default function BusinessPerformance() {
         </div>
 
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
+          <span className="text-[11px] font-medium text-secondary block">Total Files</span>
+          <span className="font-mono text-xl sm:text-2xl font-bold text-on-surface mt-1 block">
+            {overallMetrics?.totalFiles ?? (isolatedFiles?.length || 0)}
+          </span>
+          <span className="text-[10px] text-secondary font-mono">
+            {(Number(overallMetrics?.totalFilesCapacityKw) || 0).toFixed(1)} kW Onboarded
+          </span>
+        </div>
+
+        <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Overall Conversion</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-primary mt-1 block">
             {overallMetrics?.overallConversionRate ?? 0}%
           </span>
           <span className="text-[10px] text-secondary font-mono">
-            {overallMetrics?.totalFiles ?? 0} Customer Files Onboarded
+            {overallMetrics?.totalFiles ?? (isolatedFiles?.length || 0)} Customer Files
           </span>
         </div>
 
@@ -199,7 +209,7 @@ export default function BusinessPerformance() {
           </span>
         </div>
 
-        <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs col-span-2 lg:col-span-1">
+        <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs col-span-2 sm:col-span-1">
           <span className="text-[11px] font-medium text-secondary block">Cash vs Loan Ratio</span>
           <span className="font-mono text-lg sm:text-xl font-bold text-on-surface mt-1 block">
             {overallMetrics?.cashPercentage ?? 0}% / {overallMetrics?.loanPercentage ?? 0}%

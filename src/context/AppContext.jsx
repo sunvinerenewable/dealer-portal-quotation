@@ -388,10 +388,22 @@ export const AppProvider = ({ children }) => {
     if (isAuthenticated && typeof window !== 'undefined') {
       if (isPublicProposalRoute()) return;
 
-      if (window.location.pathname === '/profile') {
-        window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
-        setActiveTabState('dealer_settings');
+      if (window.location.pathname === '/profile' || window.location.pathname === '/settings') {
+        if (role === 'admin') {
+          window.history.replaceState({ tab: 'admin_settings' }, '', '/admin/settings');
+          setActiveTabState('admin_settings');
+        } else if (role === 'staff') {
+          window.history.replaceState({ tab: 'staff_dashboard' }, '', '/staff');
+          setActiveTabState('staff_dashboard');
+        } else {
+          window.history.replaceState({ tab: 'dashboard' }, '', '/dashboard');
+          setActiveTabState('dashboard');
+        }
         return;
+      }
+      if (role !== 'admin' && (activeTab === 'dealer_settings' || activeTab === 'admin_settings')) {
+        const safeTab = role === 'staff' ? 'staff_dashboard' : 'dashboard';
+        setActiveTabState(safeTab);
       }
       let targetPath = TAB_TO_PATH[activeTab];
       if (role === 'admin' && (activeTab === 'create_quote' || activeTab === 'admin_create_quote')) {
@@ -493,7 +505,7 @@ const safeSetItem = (key, value) => {
 
   // Current Dealer Profile (Gujarat default)
   const [currentDealer, setCurrentDealer] = useState(() => {
-    return safeJsonParse('sunvine_current_dealer', INITIAL_DEALERS[0]) || INITIAL_DEALERS[0];
+    return safeJsonParse('sunvine_current_dealer', null) || null;
   });
 
   // Master Pricing Presets (Configurable by Admin & synced with PDF)
@@ -509,8 +521,8 @@ const safeSetItem = (key, value) => {
   const [governanceSettings, setGovernanceSettings] = useState(DEFAULT_GOVERNANCE_SETTINGS);
 
   // Solar Hardware Catalogs (Primary: Supabase DB + SWR local memory)
-  const [modulesList, setModulesList] = useState(() => cacheManager.get('modules_list', DEFAULT_MODULES));
-  const [invertersList, setInvertersList] = useState(() => cacheManager.get('inverters_list', DEFAULT_INVERTERS));
+  const [modulesList, setModulesList] = useState(() => cacheManager.get('modules_list', []));
+  const [invertersList, setInvertersList] = useState(() => cacheManager.get('inverters_list', []));
 
   const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(true);
   const [customerFilesError, setCustomerFilesError] = useState(null);
@@ -538,12 +550,12 @@ const safeSetItem = (key, value) => {
   ]));
 
   // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync + SWR Cache)
-  const [bomCatalog, setBomCatalog] = useState(() => cacheManager.get('bom_catalog', STANDARD_BOM_CATALOG));
+  const [bomCatalog, setBomCatalog] = useState(() => cacheManager.get('bom_catalog', []));
 
   // Standard BOM Item Rates (Admin Configurable)
   const defaultBomRates = useMemo(() => {
-    return (bomCatalog || STANDARD_BOM_CATALOG).reduce((acc, item) => {
-      acc[item.id] = item.defaultRate || item.rate || 100;
+    return (bomCatalog || []).reduce((acc, item) => {
+      acc[item.id] = item.defaultRate !== undefined ? item.defaultRate : (item.rate || 0);
       return acc;
     }, {});
   }, [bomCatalog]);
@@ -625,7 +637,7 @@ const safeSetItem = (key, value) => {
   const [designRecords, setDesignRecords] = useState([]);
 
   // System & Compliance Notifications
-  const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState(() => cacheManager.get('system_notifs', []));
 
   // Determine if running in public proposal viewer mode
   const isPublicProposal = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'quote';
@@ -722,11 +734,11 @@ const safeSetItem = (key, value) => {
   // Dealers Directory (Gujarat Dealers Only - Supabase DB Authority + SWR Cache)
   const [dealers, setDealers] = useState(() => {
     const cached = cacheManager.get('dealers_list', null);
-    return Array.isArray(cached) && cached.length > 0 ? ensureDealerAttribution(cached) : ensureDealerAttribution(INITIAL_DEALERS);
+    return Array.isArray(cached) && cached.length > 0 ? ensureDealerAttribution(cached) : [];
   });
 
   // Real PDF BOS Reference Data
-  const [pdfBosMatrix, setPdfBosMatrix] = useState(() => cacheManager.get('bos_matrix', PDF_BOS_PRICE_MATRIX));
+  const [pdfBosMatrix, setPdfBosMatrix] = useState(() => cacheManager.get('bos_matrix', []));
 
   // Customer Files Pipeline (Synchronized between Admin and Sales Staff - Live Supabase DB Authority + SWR Cache)
   const [customerFiles, setCustomerFiles] = useState(() => {
@@ -774,12 +786,12 @@ const safeSetItem = (key, value) => {
         hardwareService.getAllBomItems()
       ]);
 
-      if (dbModules.status === 'fulfilled' && Array.isArray(dbModules.value) && dbModules.value.length > 0) {
+      if (dbModules.status === 'fulfilled' && Array.isArray(dbModules.value)) {
         setModulesList(dbModules.value);
         cacheManager.set('modules_list', dbModules.value);
         setIsHardwareDbConnected(true);
       }
-      if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value) && dbInverters.value.length > 0) {
+      if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value)) {
         setInvertersList(dbInverters.value);
         cacheManager.set('inverters_list', dbInverters.value);
         setIsHardwareDbConnected(true);
@@ -801,7 +813,7 @@ const safeSetItem = (key, value) => {
         cacheManager.set('tier_margins', dbTiers.value);
       }
       if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value)) {
-        const attributed = ensureDealerAttribution(dbDealers.value.length > 0 ? dbDealers.value : INITIAL_DEALERS);
+        const attributed = ensureDealerAttribution(dbDealers.value);
         setDealers(attributed);
         cacheManager.set('dealers_list', attributed);
       }
@@ -819,6 +831,11 @@ const safeSetItem = (key, value) => {
       }
       if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
         setStaffList(dbStaff.value);
+        setCurrentStaff(prev => {
+          if (!prev?.id) return prev;
+          const live = dbStaff.value.find(s => s.id === prev.id || (s.phone && s.phone === prev.phone));
+          return live ? { ...prev, ...live } : prev;
+        });
       }
       if (dbSettings.status === 'fulfilled' && dbSettings.value) {
         setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
@@ -835,28 +852,22 @@ const safeSetItem = (key, value) => {
         }
       }
       if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value)) {
-        setAuditLogs(dbLogs.value.length > 0 ? dbLogs.value : INITIAL_AUDIT_LOGS);
+        setAuditLogs(dbLogs.value);
       }
       if (dbNotifs.status === 'fulfilled' && Array.isArray(dbNotifs.value)) {
-        setNotifications(dbNotifs.value.length > 0 ? dbNotifs.value : DEFAULT_NOTIFICATIONS);
+        setNotifications(dbNotifs.value);
       }
       if (dbBanks.status === 'fulfilled' && Array.isArray(dbBanks.value) && dbBanks.value.length > 0) {
         setSolarBanks(dbBanks.value);
         cacheManager.set('solar_banks', dbBanks.value);
       }
-      if (dbBomItems.status === 'fulfilled' && Array.isArray(dbBomItems.value) && dbBomItems.value.length > 0) {
-        setBomCatalog(prev => {
-          const mergedMap = new Map();
-          STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
-          dbBomItems.value.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
-          const list = Array.from(mergedMap.values());
-          cacheManager.set('bom_catalog', list);
-          return list;
-        });
-        setBomRates(prev => {
-          const next = { ...prev };
+      if (dbBomItems.status === 'fulfilled' && Array.isArray(dbBomItems.value)) {
+        setBomCatalog(dbBomItems.value);
+        cacheManager.set('bom_catalog', dbBomItems.value);
+        setBomRates(() => {
+          const next = {};
           dbBomItems.value.forEach(it => {
-            if (it.defaultRate && !next[it.id]) {
+            if (it.defaultRate !== undefined) {
               next[it.id] = it.defaultRate;
             }
           });
@@ -929,10 +940,20 @@ const safeSetItem = (key, value) => {
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
-        hardwareService.getAllModules().then(data => { if (data) setModulesList(data); });
+        hardwareService.getAllModules().then(data => {
+          if (Array.isArray(data)) {
+            setModulesList(data);
+            cacheManager.set('modules_list', data);
+          }
+        });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_inverters' }, () => {
-        hardwareService.getAllInverters().then(data => { if (data) setInvertersList(data); });
+        hardwareService.getAllInverters().then(data => {
+          if (Array.isArray(data)) {
+            setInvertersList(data);
+            cacheManager.set('inverters_list', data);
+          }
+        });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pricing_presets' }, () => {
         pricingService.getPricingPresets().then(data => { if (data) setPricingPresets(data); });
@@ -948,7 +969,7 @@ const safeSetItem = (key, value) => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, () => {
         dealerService.getAllDealers().then(data => {
-          if (data && data.length > 0) {
+          if (Array.isArray(data)) {
             const attributed = ensureDealerAttribution(data);
             setDealers(attributed);
             cacheManager.set('dealers_list', attributed);
@@ -957,11 +978,42 @@ const safeSetItem = (key, value) => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
         staffService.getAllStaff().then(data => {
-          if (data && data.length > 0) setStaffList(data);
+          if (Array.isArray(data)) setStaffList(data);
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog_items' }, () => {
+        hardwareService.getAllBomItems().then(data => {
+          if (Array.isArray(data)) {
+            setBomCatalog(data);
+            cacheManager.set('bom_catalog', data);
+            setBomRates(() => {
+              const next = {};
+              data.forEach(it => {
+                if (it.defaultRate !== undefined) {
+                  next[it.id] = it.defaultRate;
+                }
+              });
+              return next;
+            });
+          }
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog' }, () => {
-        hardwareService.getAllBomItems().then(data => { if (data && data.length > 0) setBomCatalog(data); });
+        hardwareService.getAllBomItems().then(data => {
+          if (Array.isArray(data)) {
+            setBomCatalog(data);
+            cacheManager.set('bom_catalog', data);
+            setBomRates(() => {
+              const next = {};
+              data.forEach(it => {
+                if (it.defaultRate !== undefined) {
+                  next[it.id] = it.defaultRate;
+                }
+              });
+              return next;
+            });
+          }
+        });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
         auditLogService.getNotifications().then(data => { if (data) setNotifications(data); });
@@ -1132,6 +1184,11 @@ const safeSetItem = (key, value) => {
       const freshStaff = await staffService.getAllStaff();
       if (freshStaff && Array.isArray(freshStaff)) {
         setStaffList(freshStaff);
+        setCurrentStaff(prev => {
+          if (!prev?.id) return prev;
+          const live = freshStaff.find(s => s.id === prev.id || (s.phone && s.phone === prev.phone));
+          return live ? { ...prev, ...live } : prev;
+        });
         return freshStaff;
       }
     } catch (err) {
@@ -1522,15 +1579,20 @@ const safeSetItem = (key, value) => {
         staffName: assignedStaffName
       };
 
-      // 2. Dispatch OS-level Web Push notification to Admin & matching Salesman
+      // 2. Dispatch OS-level Web Push notification + Slack notification to Admin & matching Salesman
       pushNotificationService.sendApplicationCreatedPush({
         fileId: fileToSave.id,
         customerName: fileToSave.customerName,
         solarKw: fileToSave.solarSystemKw,
+        sanctionedLoadKw: fileToSave.sanctionedLoadKw,
         dealerId: fileToSave.dealerId,
         dealerName: fileToSave.dealerName,
         assignedStaffId,
-        assignedStaffName
+        assignedStaffName,
+        city: fileToSave.city,
+        discom: fileToSave.discom || fileToSave.discomCircle,
+        financeType: fileToSave.financeType || fileToSave.paymentMode,
+        roofType: fileToSave.roofType
       });
     }
 
@@ -1673,6 +1735,17 @@ const safeSetItem = (key, value) => {
       } catch (e) {
         console.warn('[AppContext] Failed to update file timeline in DB:', e);
       }
+
+      // Dispatch stage progression notification to Slack & Push channels
+      pushNotificationService.sendFileStageUpdatedNotification({
+        fileId,
+        customerName: targetUpdatedFile.customerName,
+        newStage: event.stage || targetUpdatedFile.currentStage,
+        status: event.status || targetUpdatedFile.status,
+        dealerName: targetUpdatedFile.dealerName,
+        actor: newMilestone.actor,
+        notes: newMilestone.notes
+      });
     }
 
     logActivity({
@@ -1784,6 +1857,15 @@ const safeSetItem = (key, value) => {
       console.warn('[AppContext] Failed to cancel customer file in DB:', e);
     }
 
+    if (targetCancelledFile) {
+      pushNotificationService.sendFileCancelledNotification({
+        fileId,
+        customerName: targetCancelledFile.customerName,
+        reason,
+        cancelledBy: actorName
+      });
+    }
+
     logActivity({
       action: 'CANCEL_CUSTOMER_FILE',
       module: 'CUSTOMER_FILE',
@@ -1840,6 +1922,14 @@ const safeSetItem = (key, value) => {
     } catch (e) {
       console.warn('[AppContext] Failed to restore customer file in DB:', e);
       throw e;
+    }
+
+    if (targetRestoredFile) {
+      pushNotificationService.sendFileRestoredNotification({
+        fileId,
+        customerName: targetRestoredFile.customerName,
+        restoredBy: restoreMilestone.actor
+      });
     }
 
     logActivity({
@@ -1988,13 +2078,24 @@ const safeSetItem = (key, value) => {
   };
 
   const updateDealer = async (updatedDealer) => {
-    setDealers(prev => prev.map(d => d.id === updatedDealer.id ? { ...d, ...updatedDealer } : d));
-    if (currentDealer?.id === updatedDealer.id) {
-      setCurrentDealer(prev => ({ ...prev, ...updatedDealer }));
+    if (!updatedDealer) return;
+    const cleanId = String(updatedDealer.id || updatedDealer.dealerCode || '').replace(/^#/, '');
+    const cleanEmail = (updatedDealer.email && String(updatedDealer.email).trim()) ? String(updatedDealer.email).trim() : null;
+    const finalUpdated = { ...updatedDealer, email: cleanEmail };
+
+    setDealers(prev => prev.map(d => {
+      const dCode = String(d.id || d.dealerCode || '').replace(/^#/, '');
+      if (dCode === cleanId || d.id === updatedDealer.id || d.dealerCode === updatedDealer.dealerCode) {
+        return { ...d, ...finalUpdated };
+      }
+      return d;
+    }));
+    if (currentDealer && (String(currentDealer.id || currentDealer.dealerCode || '').replace(/^#/, '') === cleanId)) {
+      setCurrentDealer(prev => ({ ...prev, ...finalUpdated }));
     }
     broadcastDbEvent('SYNC_DEALERS');
     try {
-      await dealerService.updateDealer(updatedDealer.id || updatedDealer.dealerCode, updatedDealer);
+      await dealerService.updateDealer(updatedDealer.id || updatedDealer.dealerCode, finalUpdated);
       broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to update dealer in DB:', e);
@@ -2053,7 +2154,7 @@ const safeSetItem = (key, value) => {
   const deleteDealer = async (id) => {
     setDealers(prev => prev.filter(d => d.id !== id && d.dealerCode !== id));
     if (currentDealer?.id === id || currentDealer?.dealerCode === id) {
-      setCurrentDealer(INITIAL_DEALERS[0]);
+      setCurrentDealer(null);
     }
     // Convert attached customer files from DEALER to DIRECT_STAFF
     setCustomerFiles(prev => prev.map(f => {

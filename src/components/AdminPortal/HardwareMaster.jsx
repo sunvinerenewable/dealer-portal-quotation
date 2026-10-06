@@ -1,7 +1,25 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { hardwareService } from '../../services/hardwareService';
+import { systemSettingsService } from '../../services/systemSettingsService';
+import { STANDARD_BOM_CATALOG } from '../../data/standardBomData';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
+
+const DEFAULT_BOM_CATEGORIES = [
+  { value: 'structure', label: 'Mounting Structure' },
+  { value: 'electrical', label: 'Electrical & Switchgear' },
+  { value: 'cables', label: 'Solar Cables & Wiring' },
+  { value: 'conduits', label: 'Conduits & Piping' },
+  { value: 'safety', label: 'Safety & Earthing' },
+  { value: 'metering', label: 'Metering & Auxiliary' },
+  { value: 'civil', label: 'Civil Works & Foundation' },
+  { value: 'logistics', label: 'Logistics & Transportation' },
+  { value: 'other', label: 'Custom Hardware' }
+];
+
+const DEFAULT_BOM_UNITS = [
+  'Nos', 'Meter', 'Mtr', 'Set', 'Pair', 'Kg', 'Box', 'Roll', 'Packet', 'Packer', 'Bundle', 'Liter', 'Feet'
+];
 
 export default function HardwareMaster() {
   const {
@@ -36,6 +54,36 @@ export default function HardwareMaster() {
   const [invertersViewMode, setInvertersViewMode] = useTableViewMode('admin_hw_inverters');
   const [bomViewMode, setBomViewMode] = useTableViewMode('admin_hw_bom');
 
+  // Custom Pure UI Deletion Confirmation State
+  const [deleteModalState, setDeleteModalState] = useState(null);
+
+  // Dynamic Units & Categories (Database Persisted)
+  const [availableUnits, setAvailableUnits] = useState(DEFAULT_BOM_UNITS);
+  const [availableCategories, setAvailableCategories] = useState(DEFAULT_BOM_CATEGORIES);
+  const [isAddingCustomUnit, setIsAddingCustomUnit] = useState(false);
+  const [customUnitInput, setCustomUnitInput] = useState('');
+  const [isAddingCustomCategory, setIsAddingCustomCategory] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
+
+  // Fetch custom units and categories from Supabase on mount
+  useEffect(() => {
+    let isMounted = true;
+    systemSettingsService.getCustomUnitsAndCategories().then(res => {
+      if (!isMounted || !res) return;
+      if (Array.isArray(res.units) && res.units.length > 0) {
+        setAvailableUnits(prev => Array.from(new Set([...prev, ...res.units])));
+      }
+      if (Array.isArray(res.categories) && res.categories.length > 0) {
+        setAvailableCategories(prev => {
+          const existingKeys = new Set(prev.map(c => c.value));
+          const newCats = res.categories.filter(c => !existingKeys.has(c.value));
+          return [...prev, ...newCats];
+        });
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
+
   // BOM Management State
   const [bomSearch, setBomSearch] = useState('');
   const [bomCategoryFilter, setBomCategoryFilter] = useState('all');
@@ -58,6 +106,13 @@ export default function HardwareMaster() {
   const [importFileName, setImportFileName] = useState('');
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef(null);
+
+  // Import BOM Components Modal state
+  const [showImportBomModal, setShowImportBomModal] = useState(false);
+  const [importedBomPreviewItems, setImportedBomPreviewItems] = useState([]);
+  const [bomImportFileName, setBomImportFileName] = useState('');
+  const [bomImportError, setBomImportError] = useState('');
+  const bomFileInputRef = useRef(null);
 
   // Bulk Price Update Modal state (SR-22)
   const [showBulkPriceModal, setShowBulkPriceModal] = useState(false);
@@ -410,24 +465,75 @@ export default function HardwareMaster() {
     }
   };
 
-  const handleDeleteModule = async (mod) => {
-    if (window.confirm(`Permanently remove ${mod.brand} ${mod.model} from catalog and database?`)) {
-      if (setModulesList) {
-        setModulesList(prev => (prev || []).filter(m => m.id !== mod.id));
+  const handleDeleteModule = (mod) => {
+    setDeleteModalState({
+      title: 'Delete Solar PV Module',
+      badge: 'Solar PV Module',
+      itemName: `${mod.brand} ${mod.model}`,
+      itemDetails: `${mod.wattage}W · ${mod.cellTech || ''} · ${mod.dimensions || ''}`,
+      itemRate: mod.ratePerWp ? `${mod.ratePerWp}` : 'Benchmark Rate',
+      warning: 'This module will be permanently removed from the catalog, presets, and Supabase database.',
+      confirmButtonText: 'Permanently Delete Module',
+      onConfirm: async () => {
+        if (setModulesList) {
+          setModulesList(prev => (prev || []).filter(m => m.id !== mod.id));
+        }
+        await hardwareService.deleteModule(mod.id);
+        triggerToast(`Removed ${mod.brand} ${mod.model} from database`);
+        setDeleteModalState(null);
       }
-      await hardwareService.deleteModule(mod.id);
-      triggerToast(`Removed ${mod.brand} ${mod.model}`);
-    }
+    });
   };
 
-  const handleDeleteInverter = async (inv) => {
-    if (window.confirm(`Permanently remove ${inv.brand} ${inv.model} from catalog and database?`)) {
-      if (setInvertersList) {
-        setInvertersList(prev => (prev || []).filter(i => i.id !== inv.id));
+  const handleDeleteInverter = (inv) => {
+    setDeleteModalState({
+      title: 'Delete String Inverter',
+      badge: 'Solar Inverter',
+      itemName: `${inv.brand} ${inv.model}`,
+      itemDetails: `${inv.capacity || `${inv.capacityKW} kW`} · ${inv.phase || ''} · ${inv.warranty || ''}`,
+      itemRate: inv.basePrice || 'Benchmark Price',
+      warning: 'This inverter model will be permanently removed from the catalog, presets, and Supabase database.',
+      confirmButtonText: 'Permanently Delete Inverter',
+      onConfirm: async () => {
+        if (setInvertersList) {
+          setInvertersList(prev => (prev || []).filter(i => i.id !== inv.id));
+        }
+        await hardwareService.deleteInverter(inv.id);
+        triggerToast(`Removed ${inv.brand} ${inv.model} from database`);
+        setDeleteModalState(null);
       }
-      await hardwareService.deleteInverter(inv.id);
-      triggerToast(`Removed ${inv.brand} ${inv.model}`);
+    });
+  };
+
+  // Custom Unit & Category Handlers
+  const handleAddCustomUnit = async () => {
+    const clean = customUnitInput.trim();
+    if (!clean) return;
+    if (!availableUnits.includes(clean)) {
+      const nextUnits = [...availableUnits, clean];
+      setAvailableUnits(nextUnits);
+      await systemSettingsService.saveCustomUnitsAndCategories(nextUnits, availableCategories);
+      triggerToast(`Custom unit "${clean}" saved to database!`);
     }
+    setBomForm(prev => ({ ...prev, unit: clean }));
+    setCustomUnitInput('');
+    setIsAddingCustomUnit(false);
+  };
+
+  const handleAddCustomCategory = async () => {
+    const clean = customCategoryInput.trim();
+    if (!clean) return;
+    const catKey = clean.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    if (!availableCategories.some(c => c.value === catKey)) {
+      const newCatObj = { value: catKey, label: clean };
+      const nextCats = [...availableCategories, newCatObj];
+      setAvailableCategories(nextCats);
+      await systemSettingsService.saveCustomUnitsAndCategories(availableUnits, nextCats);
+      triggerToast(`Custom category "${clean}" saved to database!`);
+    }
+    setBomForm(prev => ({ ...prev, category: catKey }));
+    setCustomCategoryInput('');
+    setIsAddingCustomCategory(false);
   };
 
   // ==========================================
@@ -444,6 +550,8 @@ export default function HardwareMaster() {
       rate: '',
       gstRate: '18'
     });
+    setIsAddingCustomCategory(false);
+    setIsAddingCustomUnit(false);
     setShowAddBomModal(true);
   };
 
@@ -454,34 +562,56 @@ export default function HardwareMaster() {
       category: item.category || 'structure',
       make: item.make || '',
       unit: item.unit || 'Nos',
-      spec: item.spec || '',
-      rate: item.rate !== undefined ? String(item.rate) : '',
+      spec: item.spec || item.specs || '',
+      rate: item.rate !== undefined ? String(item.rate) : (item.defaultRate !== undefined ? String(item.defaultRate) : ''),
       gstRate: item.gstRate !== undefined ? String(item.gstRate) : '18'
     });
+    setIsAddingCustomCategory(false);
+    setIsAddingCustomUnit(false);
     setShowAddBomModal(true);
   };
 
-  const handleToggleArchiveBom = async (item) => {
+  const handleToggleArchiveBom = (item) => {
     const isCurrentlyArchived = !!item.isArchived;
-    const confirmMsg = isCurrentlyArchived
-      ? `Restore ${item.name} to active BOM catalog?`
-      : `Archive ${item.name}? It will be hidden from default quotation presets.`;
-
-    if (window.confirm(confirmMsg)) {
-      if (archiveBomItem) {
-        await archiveBomItem(item.id, !isCurrentlyArchived);
+    setDeleteModalState({
+      title: isCurrentlyArchived ? 'Restore BOM Component' : 'Archive BOM Component',
+      badge: isCurrentlyArchived ? 'RESTORE ITEM' : 'ARCHIVE ITEM',
+      itemName: item.name,
+      itemDetails: `Category: ${item.category || 'structure'} · Unit: ${item.unit || 'Nos'}`,
+      itemRate: `₹ ${Number(item.rate || item.defaultRate || 0).toLocaleString('en-IN')}`,
+      warning: isCurrentlyArchived
+        ? 'This item will be restored and will appear in active quotation presets and BOM builder.'
+        : 'This item will be archived and hidden from default quotation presets.',
+      confirmButtonText: isCurrentlyArchived ? 'Restore Component' : 'Archive Component',
+      isArchive: !isCurrentlyArchived,
+      isRestore: isCurrentlyArchived,
+      onConfirm: async () => {
+        if (archiveBomItem) {
+          await archiveBomItem(item.id, !isCurrentlyArchived);
+        }
+        triggerToast(isCurrentlyArchived ? `Restored ${item.name}` : `Archived ${item.name}`);
+        setDeleteModalState(null);
       }
-      triggerToast(isCurrentlyArchived ? `Restored ${item.name}` : `Archived ${item.name}`);
-    }
+    });
   };
 
-  const handleDeleteBom = async (item) => {
-    if (window.confirm(`Permanently remove ${item.name} from BOM catalog and database?`)) {
-      if (deleteBomItem) {
-        await deleteBomItem(item.id);
+  const handleDeleteBom = (item) => {
+    setDeleteModalState({
+      title: 'Delete BOM Hardware Component',
+      badge: (item.category || 'BOM ITEM').toUpperCase(),
+      itemName: item.name,
+      itemDetails: `Make: ${item.make || 'Approved Brand'} · Unit: ${item.unit || 'Nos'} · GST: ${item.gstRate || 18}%`,
+      itemRate: `₹ ${Number(item.rate || item.defaultRate || 0).toLocaleString('en-IN')}`,
+      warning: 'This component will be permanently removed from BOM catalog, standard presets, and Supabase database.',
+      confirmButtonText: 'Permanently Delete Component',
+      onConfirm: async () => {
+        if (deleteBomItem) {
+          await deleteBomItem(item.id);
+        }
+        triggerToast(`Removed ${item.name} from catalog and database`);
+        setDeleteModalState(null);
       }
-      triggerToast(`Removed ${item.name} from catalog and database`);
-    }
+    });
   };
 
   const handleSaveBom = async (e) => {
@@ -742,6 +872,227 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // BOM File Import Handlers
+  const handleOpenImportBom = () => {
+    setImportedBomPreviewItems([]);
+    setBomImportFileName('');
+    setBomImportError('');
+    setShowImportBomModal(true);
+  };
+
+  const handleBomFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBomImportFileName(file.name);
+    setBomImportError('');
+    setImportedBomPreviewItems([]);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result;
+        if (!text || typeof text !== 'string') {
+          setBomImportError('File appears to be empty or unreadable.');
+          return;
+        }
+
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (lines.length < 2) {
+          setBomImportError('File must contain a header row and at least one item data row.');
+          return;
+        }
+
+        const headerLine = lines[0];
+        const delimiter = headerLine.includes('\t') ? '\t' : (headerLine.includes(';') ? ';' : ',');
+        const headers = headerLine.split(delimiter).map(h => h.replace(/^["']|["']$/g, '').trim().toLowerCase());
+
+        const nameIdx = headers.findIndex(h => h.includes('item') || h.includes('name') || h.includes('component') || h.includes('description') || h.includes('material') || h === 'category');
+        const brandIdx = headers.findIndex(h => h.includes('brand') || h.includes('make') || h.includes('oem') || h.includes('manufacturer'));
+        const catIdx = headers.findIndex(h => (h.includes('category') && h !== 'category') || h.includes('cat') || h.includes('group') || h.includes('type'));
+        const unitIdx = headers.findIndex(h => h.includes('unit') || h.includes('uom'));
+        const rateIdx = headers.findIndex(h => h.includes('rate') || h.includes('price') || h.includes('cost') || h.includes('amount'));
+        const modelIdx = headers.findIndex(h => h.includes('model') || h.includes('spec') || h.includes('size'));
+        const phaseIdx = headers.findIndex(h => h.includes('phase'));
+        const kwIdx = headers.findIndex(h => h.includes('kw') || h.includes('watt') || h.includes('capacity'));
+        const gstIdx = headers.findIndex(h => h.includes('gst') || h.includes('tax'));
+
+        if (nameIdx === -1 && brandIdx === -1) {
+          setBomImportError('Could not find required item name/category column in file header.');
+          return;
+        }
+
+        const actualNameIdx = nameIdx !== -1 ? nameIdx : 0;
+        const parsed = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const rawRow = lines[i];
+          const cols = rawRow.split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim());
+          if (cols.length === 0 || !cols[actualNameIdx]) continue;
+
+          let rawName = cols[actualNameIdx].trim();
+          const rawModel = modelIdx >= 0 && cols[modelIdx] ? cols[modelIdx].trim() : '';
+          const rawPhase = phaseIdx >= 0 && cols[phaseIdx] ? cols[phaseIdx].trim() : '';
+          const rawKw = kwIdx >= 0 && cols[kwIdx] ? cols[kwIdx].trim() : '';
+
+          // If model is like 60X40 and name is GI PIPE, format to GI PIPE 60X40
+          if (rawModel && !rawName.toLowerCase().includes(rawModel.toLowerCase())) {
+            rawName = `${rawName} ${rawModel}`;
+          }
+
+          const rawBrand = brandIdx >= 0 && cols[brandIdx] ? cols[brandIdx].trim() : 'STANDARD';
+          let rawCat = catIdx >= 0 && cols[catIdx] ? cols[catIdx].toLowerCase() : '';
+          
+          // Auto deduce category
+          if (!rawCat || !['structure', 'electrical', 'cables', 'conduits', 'safety'].includes(rawCat)) {
+            const low = (rawName + ' ' + rawModel + ' ' + rawPhase).toLowerCase();
+            if ((low.includes('pipe') && low.includes('gi')) || low.includes('stud') || low.includes('nut') || low.includes('wiser') || low.includes('washer') || low.includes('zinc') || low.includes('angle') || low.includes('fasner') || low.includes('fastener') || low.includes('bolt')) {
+              rawCat = 'structure';
+            } else if (low.includes('acdb') || low.includes('dcdb') || low.includes('mc4') || low.includes('inverter') || low.includes('switchgear')) {
+              rawCat = 'electrical';
+            } else if (low.includes('cable') || low.includes('wire') || low.includes('tye') || low.includes('tie')) {
+              rawCat = (low.includes('earthing') || low.includes('la')) ? 'safety' : 'cables';
+            } else if (low.includes('pvc') || low.includes('elbow') || low.includes('tee') || low.includes('saddle') || low.includes('conduit')) {
+              rawCat = 'conduits';
+            } else if (low.includes('earthing') || low.includes('la')) {
+              rawCat = 'safety';
+            } else {
+              rawCat = 'structure';
+            }
+          }
+
+          // Auto deduce unit if not specified
+          let rawUnit = unitIdx >= 0 && cols[unitIdx] ? cols[unitIdx].trim() : '';
+          if (!rawUnit) {
+            const low = rawName.toLowerCase();
+            if (low.includes('pipe') && !low.includes('pvc elbow') && !low.includes('pvc tee')) {
+              rawUnit = 'Meter';
+            } else if (low.includes('cable') || low.includes('wire')) {
+              rawUnit = 'Meter';
+            } else if (low.includes('combo') || low.includes('kit') || low.includes('set')) {
+              rawUnit = 'Set';
+            } else if (low.includes('mc4') || low.includes('pair')) {
+              rawUnit = 'Pair';
+            } else if (low.includes('tye') || low.includes('tie') || low.includes('clip') || low.includes('packet')) {
+              rawUnit = 'Packet';
+            } else if (low.includes('spray')) {
+              rawUnit = 'Can';
+            } else {
+              rawUnit = 'Nos';
+            }
+          }
+
+          const rateClean = rateIdx >= 0 && cols[rateIdx] ? parseFloat(cols[rateIdx].replace(/[^0-9.]/g, '')) || 0 : 0;
+          
+          // Combine specs from model, phase, kw
+          const specParts = [rawModel, rawPhase, rawKw ? `${rawKw} KW` : ''].filter(Boolean);
+          const specClean = specParts.join(', ');
+          const gstClean = gstIdx >= 0 && cols[gstIdx] ? parseFloat(cols[gstIdx].replace(/[^0-9.]/g, '')) || 18 : 18;
+
+          const slugId = rawName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+          parsed.push({
+            id: slugId || `bom_imp_${Date.now()}_${i}`,
+            name: rawName,
+            make: rawBrand,
+            category: rawCat,
+            unit: rawUnit,
+            defaultRate: rateClean,
+            rate: rateClean,
+            specs: specClean,
+            description: specClean || rawName,
+            gstRate: gstClean,
+            isNew: true
+          });
+        }
+
+        if (parsed.length === 0) {
+          setBomImportError('No valid BOM component rows could be parsed from this file.');
+          return;
+        }
+
+        setImportedBomPreviewItems(parsed);
+      } catch (err) {
+        console.error(err);
+        setBomImportError('Error parsing file: ' + err.message);
+      }
+    };
+    reader.onerror = () => setBomImportError('Failed to read selected file.');
+    reader.readAsText(file);
+  };
+
+  const handleConfirmBomImport = async () => {
+    if (importedBomPreviewItems.length === 0) return;
+
+    if (setBomCatalog) {
+      setBomCatalog(prev => {
+        const mergedMap = new Map();
+        (prev || []).forEach(it => mergedMap.set(it.id, it));
+        importedBomPreviewItems.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
+        return Array.from(mergedMap.values());
+      });
+    }
+
+    if (updateBomItemRate) {
+      importedBomPreviewItems.forEach(it => {
+        if (it.defaultRate !== undefined) {
+          updateBomItemRate(it.id, it.defaultRate);
+        }
+      });
+    }
+
+    // Upsert into Supabase bom_catalog table
+    await hardwareService.bulkImportBomItems(importedBomPreviewItems);
+
+    if (addNotification) {
+      addNotification({
+        type: 'success',
+        icon: 'inventory_2',
+        title: `Imported ${importedBomPreviewItems.length} BOM Components`,
+        description: `BOM catalog updated from ${bomImportFileName || 'Excel / CSV'}. Persisted to Supabase database.`,
+        audience: 'all',
+        targetTab: 'pricing_master'
+      });
+    }
+
+    triggerToast(`Successfully imported & synced ${importedBomPreviewItems.length} BOM components to database!`);
+    setShowImportBomModal(false);
+    setImportedBomPreviewItems([]);
+    setBomImportFileName('');
+    setBomImportError('');
+    if (bomFileInputRef.current) bomFileInputRef.current.value = '';
+  };
+
+  const handleResetToMasterBom = async () => {
+    if (window.confirm('Load all 24 official Gujarat Rooftop BOM specifications and rates from Excel master into your catalog?')) {
+      if (setBomCatalog) {
+        setBomCatalog(STANDARD_BOM_CATALOG);
+      }
+      if (updateBomItemRate) {
+        STANDARD_BOM_CATALOG.forEach(it => {
+          updateBomItemRate(it.id, it.defaultRate);
+        });
+      }
+      await hardwareService.bulkImportBomItems(STANDARD_BOM_CATALOG);
+      triggerToast('Successfully loaded and synced all 24 Master BOM components to database!');
+    }
+  };
+
+  const handleDownloadSampleBomCsvTemplate = () => {
+    const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(
+      'Item Name,Make / Brand,Category,Unit,Rate (₹),Model / Specs,GST Rate (%)\n' +
+      STANDARD_BOM_CATALOG.map(it => 
+        `"${it.name}","${it.make || 'STANDARD'}","${it.category}","${it.unit}","${it.defaultRate}","${it.specs || it.description || ''}","${it.gstRate || 18}"`
+      ).join('\n')
+    );
+    const link = document.createElement('a');
+    link.setAttribute('href', csvContent);
+    link.setAttribute('download', 'master_bom_catalog_24_items.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // 4. Bulk Price Update Handlers
   const handleOpenBulkPriceModal = () => {
     const initialRates = {};
@@ -866,6 +1217,19 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
     return true;
   });
 
+  const getBomItemRate = (item) => {
+    if (bomRates && bomRates[item?.id] !== undefined && bomRates[item?.id] !== null) {
+      return Number(bomRates[item.id]) || 0;
+    }
+    if (item?.rate !== undefined && item?.rate !== null && item?.rate !== '') {
+      return Number(item.rate) || 0;
+    }
+    if (item?.defaultRate !== undefined && item?.defaultRate !== null && item?.defaultRate !== '') {
+      return Number(item.defaultRate) || 0;
+    }
+    return 0;
+  };
+
   const totalDealersCount = dealers?.length || 550;
 
   return (
@@ -963,138 +1327,147 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
       </div>
 
       {/* TOP TELEMETRY KPI QUICK STATS */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 my-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 my-6">
         {/* Card 1: Active PV Modules */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl p-5 border border-surface-container-highest shadow-sm group">
-          <div className="flex items-center justify-between text-secondary">
-            <span className="font-label-sm text-label-sm font-semibold tracking-wider uppercase group-hover:text-primary transition-colors">Active PV Modules</span>
-            <span className="p-1.5 rounded-lg bg-surface-container-low text-primary group-hover:bg-primary/10 transition-colors">
-              <span className="material-symbols-outlined">grid_view</span>
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:shadow-sm hover:border-emerald-500/50 transition-all group">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-emerald-700 transition-colors">Active PV Modules</span>
+            <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200/60 group-hover:scale-105 transition-transform">
+              <span className="material-symbols-outlined text-[20px]">grid_view</span>
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="font-headline-xl text-headline-xl text-inverse-surface font-bold">{modulesList?.length || 8}</span>
-            <span className="font-label-sm text-label-sm text-secondary font-medium">ALMM Models</span>
+            <span className="font-mono text-3xl font-extrabold text-slate-900">{modulesList?.length ?? 0}</span>
+            <span className="text-xs font-semibold text-slate-500">ALMM Models</span>
           </div>
           <div className="flex items-center gap-1.5 mt-2.5">
-            <span className="material-symbols-outlined text-primary text-sm">verified</span>
-            <span className="font-label-xs text-label-xs text-primary font-semibold">Waaree, APS, Adani, Rayzone</span>
+            <span className="material-symbols-outlined text-emerald-600 text-sm">verified</span>
+            <span className="text-xs font-bold text-emerald-700">Waaree, APS, Adani, Rayzone</span>
           </div>
         </div>
 
         {/* Card 2: Active Inverters */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl p-5 border border-surface-container-highest shadow-sm group">
-          <div className="flex items-center justify-between text-secondary">
-            <span className="font-label-sm text-label-sm font-semibold tracking-wider uppercase group-hover:text-primary transition-colors">Active Inverters</span>
-            <span className="p-1.5 rounded-lg bg-surface-container-low text-primary group-hover:bg-primary/10 transition-colors">
-              <span className="material-symbols-outlined">power</span>
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:shadow-sm hover:border-blue-500/50 transition-all group">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-blue-700 transition-colors">Active Inverters</span>
+            <span className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200/60 group-hover:scale-105 transition-transform">
+              <span className="material-symbols-outlined text-[20px]">power</span>
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="font-headline-xl text-headline-xl text-inverse-surface font-bold">{invertersList?.length || 9}</span>
-            <span className="font-label-sm text-label-sm text-secondary font-medium">2.2kW to 125kW</span>
+            <span className="font-mono text-3xl font-extrabold text-slate-900">{invertersList?.length ?? 0}</span>
+            <span className="text-xs font-semibold text-slate-500">Single &amp; 3-Phase</span>
           </div>
           <div className="flex items-center gap-1.5 mt-2.5">
-            <span className="material-symbols-outlined text-primary text-sm">bolt</span>
-            <span className="font-label-xs text-label-xs text-secondary font-semibold">Solaryaan, Solis, Sungrow</span>
+            <span className="material-symbols-outlined text-blue-600 text-sm">bolt</span>
+            <span className="text-xs font-bold text-slate-700">Polycab, Vsole, Deye, APS</span>
           </div>
         </div>
 
         {/* Card 3: BOM Catalog Items */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl p-5 border border-surface-container-highest shadow-sm group">
-          <div className="flex items-center justify-between text-secondary">
-            <span className="font-label-sm text-label-sm font-semibold tracking-wider uppercase group-hover:text-primary transition-colors">BOM Hardware Catalog</span>
-            <span className="p-1.5 rounded-lg bg-surface-container-low text-primary group-hover:bg-primary/10 transition-colors">
-              <span className="material-symbols-outlined">inventory_2</span>
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:shadow-sm hover:border-emerald-500/50 transition-all group">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-emerald-700 transition-colors">BOM Hardware Catalog</span>
+            <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200/60 group-hover:scale-105 transition-transform">
+              <span className="material-symbols-outlined text-[20px]">inventory_2</span>
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="font-headline-xl text-headline-xl text-inverse-surface font-bold">{(bomCatalog || []).length || 22}</span>
-            <span className="font-label-sm text-label-sm text-secondary font-medium">Hardware Components</span>
+            <span className="font-mono text-3xl font-extrabold text-slate-900">{(bomCatalog || []).length}</span>
+            <span className="text-xs font-semibold text-slate-500">Hardware Components</span>
           </div>
           <div className="flex items-center gap-1.5 mt-2.5">
             <span className="material-symbols-outlined text-emerald-600 text-sm">inventory</span>
-            <span className="font-label-xs text-label-xs text-emerald-700 font-semibold">Structure, Cables, Switchgear</span>
+            <span className="text-xs font-bold text-emerald-700">Structure, Cables, Switchgear</span>
           </div>
         </div>
 
         {/* Card 4: Catalog Synchronization */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl p-5 border border-surface-container-highest shadow-sm group">
-          <div className="flex items-center justify-between text-secondary">
-            <span className="font-label-sm text-label-sm font-semibold tracking-wider uppercase group-hover:text-primary transition-colors">Catalog Synchronization</span>
-            <span className="p-1.5 rounded-lg bg-surface-container-low text-primary group-hover:bg-primary/10 transition-colors">
-              <span className="material-symbols-outlined">sync</span>
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:shadow-sm hover:border-emerald-500/50 transition-all group">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-emerald-700 transition-colors">Catalog Synchronization</span>
+            <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200/60 group-hover:scale-105 transition-transform">
+              <span className="material-symbols-outlined text-[20px]">sync</span>
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="font-headline-sm text-headline-sm text-inverse-surface font-bold">Today, 09:30 AM</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-slate-900 font-heading">Live Supabase DB</span>
           </div>
           <div className="flex items-center gap-1.5 mt-2.5">
-            <span className="w-2 h-2 rounded-full bg-primary-container"></span>
-            <span className="font-label-xs text-label-xs text-secondary font-semibold">Synced across {totalDealersCount} Gujarat Dealers</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-xs font-bold text-emerald-700">Realtime sync active</span>
           </div>
         </div>
       </section>
 
       {/* SEGMENTED TABS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-surface-container-highest pb-3 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3.5 gap-3">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
           <button
+            type="button"
             onClick={() => setActiveTab('modules')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-label-md font-bold flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap shrink-0 ${
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer text-xs sm:text-sm ${
               activeTab === 'modules'
-                ? 'bg-inverse-surface text-surface-container-lowest'
-                : 'bg-surface-container-low text-secondary hover:text-inverse-surface'
+                ? 'bg-slate-900 text-white shadow-md'
+                : 'bg-white border border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <span className="material-symbols-outlined text-primary-container">solar_power</span>
+            <span className="material-symbols-outlined text-[20px] text-emerald-400">solar_power</span>
             <span>Solar PV Modules (ALMM Approved)</span>
-            <span className="bg-surface-container-lowest/20 text-surface-container-lowest text-label-xs px-2 py-0.5 rounded-full">{modulesList?.length || 8} Models</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+              activeTab === 'modules' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-800'
+            }`}>{modulesList?.length ?? 0} Models</span>
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('inverters')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-label-md font-medium flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 ${
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer text-xs sm:text-sm ${
               activeTab === 'inverters'
-                ? 'bg-inverse-surface text-surface-container-lowest font-bold shadow-sm'
-                : 'bg-surface-container-low text-secondary hover:text-inverse-surface'
+                ? 'bg-slate-900 text-white shadow-md'
+                : 'bg-white border border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <span className="material-symbols-outlined">settings_input_component</span>
+            <span className="material-symbols-outlined text-[20px] text-blue-400">settings_input_component</span>
             <span>Solar Inverters (Grid-Tied &amp; Hybrid)</span>
-            <span className="bg-surface-container-highest text-secondary text-label-xs px-2 py-0.5 rounded-full">{invertersList?.length || 9} Models</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+              activeTab === 'inverters' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-800'
+            }`}>{invertersList?.length ?? 0} Models</span>
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('bos')}
-            className={`px-3 sm:px-4 py-2 rounded-lg font-label-md font-medium flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 ${
+            className={`px-3.5 sm:px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all whitespace-nowrap shrink-0 cursor-pointer text-xs sm:text-sm ${
               activeTab === 'bos'
-                ? 'bg-inverse-surface text-surface-container-lowest font-bold shadow-sm'
-                : 'bg-surface-container-low text-secondary hover:text-inverse-surface'
+                ? 'bg-slate-900 text-white shadow-md'
+                : 'bg-white border border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <span className="material-symbols-outlined">inventory_2</span>
+            <span className="material-symbols-outlined text-[20px] text-amber-400">inventory_2</span>
             <span>Bill of Materials (BOM Catalog)</span>
-            <span className="bg-surface-container-highest text-secondary text-label-xs px-2 py-0.5 rounded-full">{(bomCatalog || []).length} Items</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+              activeTab === 'bos' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-800'
+            }`}>{(bomCatalog || []).length} Items</span>
           </button>
         </div>
         <button
           type="button"
           onClick={handleExportLedger}
-          className="flex items-center gap-1.5 text-primary font-label-md hover:underline self-end sm:self-center shrink-0 cursor-pointer"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-300 hover:border-emerald-500 text-emerald-700 hover:text-emerald-800 font-bold text-xs sm:text-sm shadow-xs hover:bg-emerald-50/50 self-end sm:self-center shrink-0 cursor-pointer transition-all"
         >
-          <span className="material-symbols-outlined">download</span>
+          <span className="material-symbols-outlined text-[18px]">download</span>
           <span>Export Ledger</span>
         </button>
       </div>
 
       {/* SECTION 1: SOLAR MODULES CATALOG TABLE */}
       {activeTab === 'modules' && (
-        <div className="mt-6 bg-surface-container-lowest rounded-xl border border-surface-container-highest shadow-sm overflow-hidden">
-          <div className="p-4 bg-surface-container-lowest border-b border-surface-container-highest flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="mt-6 bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <div className="p-4 sm:p-5 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3 flex-1 max-w-md">
               <div className="relative w-full">
-                <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary">search</span>
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400">search</span>
                 <input
-                  className="w-full pl-9 pr-3 py-1.5 text-body-md rounded-lg border border-surface-container-highest focus:ring-1 focus:ring-primary-container focus:border-primary-container placeholder-secondary/60"
+                  className="w-full pl-10 pr-3 py-2 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs font-medium"
                   placeholder="Filter by OEM make, wattage, or cell tech..."
                   type="text"
                   value={moduleSearch}
@@ -1103,34 +1476,59 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-label-xs text-secondary font-semibold uppercase mr-1">Filter:</span>
+              <span className="text-xs text-slate-500 font-bold uppercase tracking-wider mr-1">Filter:</span>
               <button
+                type="button"
                 onClick={() => setModuleFilter('all')}
-                className={`px-3 py-1 rounded-full text-label-xs font-semibold ${moduleFilter === 'all' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border border-surface-container-highest'}`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  moduleFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 All ({modulesList?.length || 0})
               </button>
               <button
+                type="button"
                 onClick={() => setModuleFilter('topcon')}
-                className={`px-3 py-1 rounded-full text-label-xs font-medium border ${moduleFilter === 'topcon' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  moduleFilter === 'topcon'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 TOPCon Bifacial
               </button>
               <button
+                type="button"
                 onClick={() => setModuleFilter('perc')}
-                className={`px-3 py-1 rounded-full text-label-xs font-medium border ${moduleFilter === 'perc' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  moduleFilter === 'perc'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 Mono PERC
               </button>
               <button
+                type="button"
                 onClick={() => setModuleFilter('commercial')}
-                className={`px-3 py-1 rounded-full text-label-xs font-medium border ${moduleFilter === 'commercial' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  moduleFilter === 'commercial'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 High Wattage (≥ 585W)
               </button>
               <button
+                type="button"
                 onClick={() => setModuleFilter('archived')}
-                className={`px-3 py-1 rounded-full text-label-xs font-medium border ${moduleFilter === 'archived' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  moduleFilter === 'archived'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 Archived ({(modulesList || []).filter(m => m.isArchived).length})
               </button>
@@ -1139,92 +1537,113 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
           </div>
 
           {modulesViewMode === 'card' ? (
-            <div className="p-4 sm:p-5">
+            <div className="p-4 sm:p-5 bg-slate-50/50">
               {filteredModules.length === 0 ? (
-                <div className="py-12 text-center text-secondary">
-                  <span className="material-symbols-outlined text-4xl text-secondary/40 block mb-2">search_off</span>
+                <div className="py-12 text-center text-slate-500 bg-white rounded-xl border border-dashed border-slate-200">
+                  <span className="material-symbols-outlined text-4xl text-slate-400 block mb-2">search_off</span>
                   No solar modules match your current filter criteria.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
                   {filteredModules.map((mod, idx) => {
                     const initial = mod.brand ? mod.brand.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'PV';
                     return (
-                      <div key={mod.id || idx} className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
+                      <div
+                        key={mod.id || idx}
+                        className="bg-white border-2 border-slate-200/90 hover:border-emerald-500/70 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3.5 group"
+                      >
                         {/* Header */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-8 h-8 rounded-lg bg-surface-container-low text-inverse-surface font-bold text-xs flex items-center justify-center border border-surface-container-highest">
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-800 font-extrabold text-sm flex items-center justify-center border border-emerald-200 shadow-2xs shrink-0">
                               {initial}
                             </span>
-                            <div>
-                              <span className="font-bold text-inverse-surface text-sm block">{mod.brand}</span>
-                              <span className="text-[11px] text-secondary font-mono">{mod.model}</span>
+                            <div className="min-w-0">
+                              <span className="font-extrabold text-slate-900 text-base leading-tight block truncate group-hover:text-emerald-700 transition-colors">
+                                {mod.brand}
+                              </span>
+                              <span className="text-xs text-slate-600 font-medium block truncate mt-0.5" title={mod.model}>
+                                {mod.model}
+                              </span>
                             </div>
                           </div>
                           {mod.isArchived ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary px-2 py-0.5 rounded-full bg-surface-container">
-                              <span className="w-1.5 h-1.5 rounded-full bg-secondary/60"></span> Archived
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Archived
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary px-2 py-0.5 rounded-full bg-primary-container/20">
-                              <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span> Active
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 shrink-0 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Active
                             </span>
                           )}
                         </div>
 
                         {/* Cell Tech & Specs */}
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-surface-container-highest text-xs">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-label-xs font-semibold ${
+                        <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 text-xs">
+                          <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-bold border ${
                             (mod.cellTech || '').includes('TOPCon')
-                              ? 'bg-tertiary-container/20 text-tertiary'
-                              : 'bg-secondary-container text-on-secondary-fixed'
+                              ? 'bg-teal-50 text-teal-800 border-teal-200'
+                              : (mod.cellTech || '').includes('PERC')
+                                ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                                : 'bg-slate-100 text-slate-800 border-slate-200'
                           }`}>
                             {mod.cellTech || 'TOPCon Mono Bifacial'}
                           </span>
-                          <span className="font-bold text-inverse-surface font-mono text-sm">{mod.wattage} WP</span>
+                          <span className="font-extrabold text-slate-900 font-mono text-base bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200/80">
+                            {mod.wattage} <span className="text-xs font-bold text-emerald-700">Wp</span>
+                          </span>
                         </div>
 
-                        {/* 3-Col Stats */}
-                        <div className="grid grid-cols-3 gap-1 bg-surface-container-low/40 p-2 rounded-lg text-center text-xs">
+                        {/* 2-Col Key Stats Box */}
+                        <div className="grid grid-cols-2 gap-2 bg-gradient-to-r from-slate-50 to-emerald-50/30 p-2.5 rounded-xl border border-slate-200/80 text-xs">
                           <div>
-                            <span className="text-[10px] text-secondary block">Efficiency</span>
-                            <span className="font-bold text-primary font-mono">{mod.efficiency || '22.4%'}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Efficiency</span>
+                            <span className="font-extrabold text-emerald-700 font-mono text-sm block mt-0.5">{mod.efficiency || '22.4%'}</span>
                           </div>
-                          <div className="col-span-2">
-                            <span className="text-[10px] text-secondary block">Rate / Wp</span>
-                            <span className="font-bold text-inverse-surface font-mono">{mod.ratePerWp || '₹ 18.50 / Wp'}</span>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Rate / Wp</span>
+                            <span className="font-extrabold text-slate-900 font-mono text-sm block mt-0.5">{mod.ratePerWp || '₹ 18.50 / Wp'}</span>
                           </div>
                         </div>
 
-                        <div className="text-[11px] text-secondary font-mono">
-                          {mod.dimensions || '2278 × 1134 × 30 mm | 28 kg'}
+                        {/* Dimensions & Physical specs */}
+                        <div className="flex items-center gap-1.5 text-xs text-slate-700 font-mono font-medium bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200/60">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400 shrink-0">straighten</span>
+                          <span className="truncate">{mod.dimensions || '2278 × 1134 × 30 mm | 28 kg'}</span>
                         </div>
 
                         {/* Footer Actions */}
-                        <div className="flex items-center justify-between pt-2 border-t border-surface-container-highest text-xs">
-                          <span className="text-secondary text-[11px]">{mod.warranty || '30 Yrs Warranty'}</span>
-                          <div className="flex items-center gap-1">
+                        <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-xs">
+                          <span className="text-xs font-bold text-slate-700 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px] text-amber-600">verified_user</span>
+                            <span>{mod.warranty || '30 Yrs Warranty'}</span>
+                          </span>
+                          <div className="flex items-center gap-1.5">
                             <button
+                              type="button"
                               onClick={() => handleEditModule(mod)}
-                              className="px-2 py-1 rounded border border-surface-container-highest hover:border-inverse-surface text-secondary hover:text-inverse-surface flex items-center gap-1 transition-colors cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-emerald-500 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 font-bold flex items-center gap-1 transition-all shadow-2xs cursor-pointer text-xs"
                               title="Edit Spec"
                             >
                               <span className="material-symbols-outlined text-[15px]">edit</span>
                               <span>Edit</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleToggleArchiveModule(mod)}
-                              className={`p-1 rounded border border-surface-container-highest transition-colors cursor-pointer ${
-                                mod.isArchived ? 'hover:text-primary text-secondary' : 'hover:text-error text-secondary'
+                              className={`p-1.5 rounded-lg border border-slate-300 bg-white transition-all shadow-2xs cursor-pointer ${
+                                mod.isArchived
+                                  ? 'hover:border-emerald-500 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700'
+                                  : 'hover:border-amber-400 hover:bg-amber-50 text-slate-600 hover:text-amber-700'
                               }`}
                               title={mod.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
                             >
                               <span className="material-symbols-outlined text-[16px]">{mod.isArchived ? 'unarchive' : 'archive'}</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteModule(mod)}
-                              className="p-1 rounded border border-surface-container-highest hover:border-error text-secondary hover:text-error transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg border border-slate-300 bg-white hover:border-rose-400 hover:bg-rose-50 text-slate-600 hover:text-rose-700 transition-all shadow-2xs cursor-pointer"
                               title="Delete Spec"
                             >
                               <span className="material-symbols-outlined text-[16px]">delete</span>
@@ -1241,83 +1660,88 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-11 border-b border-surface-container-lowest/10">
-                  <th className="px-4 py-2 font-label-sm">OEM Brand / Make</th>
-                  <th className="px-4 py-2 font-label-sm">Model Name &amp; Series</th>
-                  <th className="px-4 py-2 font-label-sm">Cell Tech</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Wattage</th>
-                  <th className="px-4 py-2 font-label-sm">Dimensions &amp; Weight</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Efficiency %</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Base Procurement Rate</th>
-                  <th className="px-4 py-2 font-label-sm">Performance Warranty</th>
-                  <th className="px-4 py-2 font-label-sm text-center">Dealer Catalog</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Actions</th>
+                <tr className="bg-slate-900 text-white text-xs font-bold uppercase tracking-wider h-11 border-b border-slate-800">
+                  <th className="px-4 py-3">OEM Brand / Make</th>
+                  <th className="px-4 py-3">Model Name &amp; Series</th>
+                  <th className="px-4 py-3">Cell Tech</th>
+                  <th className="px-4 py-3 text-right">Wattage</th>
+                  <th className="px-4 py-3">Dimensions &amp; Weight</th>
+                  <th className="px-4 py-3 text-right">Efficiency %</th>
+                  <th className="px-4 py-3 text-right">Base Procurement Rate</th>
+                  <th className="px-4 py-3">Performance Warranty</th>
+                  <th className="px-4 py-3 text-center">Dealer Catalog</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-surface-container-highest font-body-md text-on-surface">
+              <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-900 bg-white">
                 {filteredModules.map((mod, idx) => {
                   const initial = mod.brand ? mod.brand.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'PV';
                   return (
-                    <tr key={mod.id || idx} className={`hover:bg-surface-container-low/60 transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}>
+                    <tr key={mod.id || idx} className={`hover:bg-slate-50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="w-7 h-7 rounded bg-surface-container-low text-inverse-surface font-bold text-xs flex items-center justify-center border border-surface-container-highest">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center justify-center border border-emerald-200">
                             {initial}
                           </span>
-                          <span className="font-semibold text-inverse-surface">{mod.brand}</span>
+                          <span className="font-bold text-slate-900 text-sm">{mod.brand}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-inverse-surface">{mod.model}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{mod.model}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-label-xs font-semibold ${
+                        <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold border ${
                           (mod.cellTech || '').includes('TOPCon')
-                            ? 'bg-tertiary-container/20 text-tertiary'
-                            : 'bg-secondary-container text-on-secondary-fixed'
+                            ? 'bg-teal-50 text-teal-800 border-teal-200'
+                            : (mod.cellTech || '').includes('PERC')
+                              ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                              : 'bg-slate-100 text-slate-800 border-slate-200'
                         }`}>
                           {mod.cellTech || 'TOPCon Mono Bifacial'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-inverse-surface font-mono">{mod.wattage} WP</td>
-                      <td className="px-4 py-3 text-body-sm text-secondary font-mono">{mod.dimensions || '2278 × 1134 × 30 mm | 28 kg'}</td>
-                      <td className="px-4 py-3 text-right font-bold text-primary font-mono">{mod.efficiency || '22.4%'}</td>
+                      <td className="px-4 py-3 text-right font-extrabold text-slate-900 font-mono text-sm">{mod.wattage} WP</td>
+                      <td className="px-4 py-3 text-slate-600 font-mono text-xs">{mod.dimensions || '2278 × 1134 × 30 mm | 28 kg'}</td>
+                      <td className="px-4 py-3 text-right font-extrabold text-emerald-700 font-mono text-sm">{mod.efficiency || '22.4%'}</td>
                       <td className="px-4 py-3 text-right">
-                        <div className="font-bold text-inverse-surface font-mono">{mod.ratePerWp || '₹ 18.50 / Wp'}</div>
-                        <div className="text-label-xs text-secondary font-mono">₹ {Math.round(Number(mod.wattage || 550) * 18.5).toLocaleString()} / Panel</div>
+                        <div className="font-extrabold text-slate-900 font-mono text-sm">{mod.ratePerWp || '₹ 18.50 / Wp'}</div>
+                        <div className="text-[11px] text-slate-500 font-mono">₹ {Math.round(Number(mod.wattage || 550) * 18.5).toLocaleString()} / Panel</div>
                       </td>
-                      <td className="px-4 py-3 text-body-sm text-secondary">{mod.warranty || '30 Years Performance'}</td>
+                      <td className="px-4 py-3 text-slate-700 font-medium">{mod.warranty || '30 Years Performance'}</td>
                       <td className="px-4 py-3 text-center">
                         {mod.isArchived ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary">
-                            <span className="w-2 h-2 rounded-full bg-secondary/60"></span> Archived
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Archived
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
-                            <span className="w-2 h-2 rounded-full bg-primary-container"></span> Active
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Active
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5 text-secondary">
+                        <div className="flex items-center justify-end gap-1.5 text-slate-600">
                           <button
+                            type="button"
                             onClick={() => handleEditModule(mod)}
-                            className="p-1 hover:text-inverse-surface transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg border border-slate-300 hover:border-emerald-500 hover:text-emerald-700 bg-white transition-colors cursor-pointer shadow-2xs"
                             title="Edit Spec"
                           >
-                            <span className="material-symbols-outlined">edit</span>
+                            <span className="material-symbols-outlined text-[16px]">edit</span>
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleToggleArchiveModule(mod)}
-                            className={`p-1 transition-colors cursor-pointer ${mod.isArchived ? 'hover:text-primary text-secondary' : 'hover:text-error'}`}
+                            className={`p-1.5 rounded-lg border border-slate-300 bg-white transition-colors cursor-pointer shadow-2xs ${mod.isArchived ? 'hover:border-emerald-500 hover:text-emerald-700' : 'hover:border-amber-400 hover:text-amber-700'}`}
                             title={mod.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
                           >
-                            <span className="material-symbols-outlined">{mod.isArchived ? 'unarchive' : 'archive'}</span>
+                            <span className="material-symbols-outlined text-[16px]">{mod.isArchived ? 'unarchive' : 'archive'}</span>
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDeleteModule(mod)}
-                            className="p-1 hover:text-error transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg border border-slate-300 bg-white hover:border-rose-400 hover:text-rose-700 transition-colors cursor-pointer shadow-2xs"
                             title="Delete Spec"
                           >
-                            <span className="material-symbols-outlined">delete</span>
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
                           </button>
                         </div>
                       </td>
@@ -1333,48 +1757,68 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
 
       {/* SECTION 2: SOLAR INVERTERS CATALOG TABLE */}
       {activeTab === 'inverters' && (
-        <div className="mt-6 bg-surface-container-lowest rounded-xl border border-surface-container-highest shadow-sm overflow-hidden">
-          <div className="p-4 bg-surface-container-lowest border-b border-surface-container-highest flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="mt-6 bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+          <div className="p-4 sm:p-5 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="font-headline-sm text-headline-sm text-inverse-surface font-bold">
+              <h2 className="font-heading text-slate-900 font-extrabold text-base sm:text-lg">
                 Approved String &amp; Central Inverters Master (Single &amp; Three Phase)
               </h2>
-              <p className="font-body-sm text-body-sm text-secondary mt-0.5">
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
                 Preset efficiencies, phase configurations, and base distributor rates for Gujarat quotations.
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative">
-                <span className="material-symbols-outlined absolute left-2.5 top-2 text-secondary text-sm">search</span>
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
                 <input
                   type="text"
                   placeholder="Search inverters..."
                   value={inverterSearch}
                   onChange={(e) => setInverterSearch(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-surface-container-highest"
+                  className="pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-xs font-medium"
                 />
               </div>
               <button
+                type="button"
                 onClick={() => setInverterFilter('all')}
-                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'all' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                  inverterFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 All ({invertersList?.length || 0})
               </button>
               <button
+                type="button"
                 onClick={() => setInverterFilter('single')}
-                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'single' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                  inverterFilter === 'single'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 1-Phase
               </button>
               <button
+                type="button"
                 onClick={() => setInverterFilter('three')}
-                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'three' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                  inverterFilter === 'three'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 3-Phase
               </button>
               <button
+                type="button"
                 onClick={() => setInverterFilter('archived')}
-                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'archived' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                  inverterFilter === 'archived'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                }`}
               >
                 Archived ({(invertersList || []).filter(i => i.isArchived).length})
               </button>
@@ -1383,84 +1827,99 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
           </div>
 
           {invertersViewMode === 'card' ? (
-            <div className="p-4 sm:p-5">
+            <div className="p-4 sm:p-5 bg-slate-50/50">
               {filteredInverters.length === 0 ? (
-                <div className="py-12 text-center text-secondary">
-                  <span className="material-symbols-outlined text-4xl text-secondary/40 block mb-2">search_off</span>
+                <div className="py-12 text-center text-slate-500 bg-white rounded-xl border border-dashed border-slate-200">
+                  <span className="material-symbols-outlined text-4xl text-slate-400 block mb-2">search_off</span>
                   No solar inverters match your current filter criteria.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
                   {filteredInverters.map((inv, idx) => {
                     const initial = inv.brand ? inv.brand.slice(0, 2).toUpperCase() : 'IN';
                     return (
-                      <div key={inv.id || idx} className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
+                      <div
+                        key={inv.id || idx}
+                        className="bg-white border-2 border-slate-200/90 hover:border-blue-500/70 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3.5 group"
+                      >
                         {/* Header */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-8 h-8 rounded-lg bg-primary-container/20 text-primary font-bold text-xs flex items-center justify-center border border-primary-container/40">
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-800 font-extrabold text-sm flex items-center justify-center border border-blue-200 shadow-2xs shrink-0">
                               {initial}
                             </span>
-                            <div>
-                              <span className="font-bold text-inverse-surface text-sm block">{inv.brand}</span>
-                              <span className="text-[11px] text-secondary font-mono">{inv.model}</span>
+                            <div className="min-w-0">
+                              <span className="font-extrabold text-slate-900 text-base leading-tight block truncate group-hover:text-blue-700 transition-colors">
+                                {inv.brand}
+                              </span>
+                              <span className="text-xs text-slate-600 font-medium block truncate mt-0.5" title={inv.model}>
+                                {inv.model}
+                              </span>
                             </div>
                           </div>
                           {inv.isArchived ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary px-2 py-0.5 rounded-full bg-surface-container-high">
-                              <span className="w-1.5 h-1.5 rounded-full bg-secondary/60"></span> Archived
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Archived
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary px-2 py-0.5 rounded-full bg-primary-container/20">
-                              <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span> Active
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 shrink-0 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Active
                             </span>
                           )}
                         </div>
 
                         {/* Specs & Phase */}
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-surface-container-highest text-xs">
-                          <span className="inline-block px-2 py-0.5 rounded-full text-label-xs font-semibold bg-surface-container-high text-on-surface">
+                        <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 text-xs">
+                          <span className="inline-block px-2.5 py-1 rounded-lg text-xs font-bold border bg-purple-50 text-purple-800 border-purple-200">
                             {inv.phase || '3-Phase'}
                           </span>
-                          <span className="font-bold text-inverse-surface font-mono text-sm">{getInverterCapacityText(inv)}</span>
+                          <span className="font-extrabold text-slate-900 font-mono text-base bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200/80">
+                            {getInverterCapacityText(inv)}
+                          </span>
                         </div>
 
-                        {/* 3-Col Stats */}
-                        <div className="grid grid-cols-2 gap-2 bg-surface-container-low/40 p-2.5 rounded-lg text-center text-xs">
+                        {/* 2-Col Key Stats */}
+                        <div className="grid grid-cols-2 gap-2 bg-gradient-to-r from-slate-50 to-blue-50/30 p-2.5 rounded-xl border border-slate-200/80 text-xs">
                           <div>
-                            <span className="text-[10px] text-secondary block">Euro Efficiency</span>
-                            <span className="font-bold text-primary font-mono">{inv.efficiency || '98.6%'}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Euro Efficiency</span>
+                            <span className="font-extrabold text-emerald-700 font-mono text-sm block mt-0.5">{inv.efficiency || '98.6%'}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-secondary block">Base Price</span>
-                            <span className="font-bold text-inverse-surface font-mono">{inv.basePrice || '₹ 54,000'}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Base Price</span>
+                            <span className="font-extrabold text-slate-900 font-mono text-sm block mt-0.5">{inv.basePrice || '₹ 54,000'}</span>
                           </div>
                         </div>
 
                         {/* Footer Actions */}
-                        <div className="flex items-center justify-between pt-2 border-t border-surface-container-highest text-xs">
-                          <span className="text-secondary text-[11px]">{inv.warranty || '8 Yrs Warranty'}</span>
-                          <div className="flex items-center gap-1">
+                        <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 text-xs">
+                          <span className="text-xs font-bold text-slate-700 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px] text-amber-600">verified_user</span>
+                            <span>{inv.warranty || '8 Yrs Warranty'}</span>
+                          </span>
+                          <div className="flex items-center gap-1.5">
                             <button
+                              type="button"
                               onClick={() => handleEditInverter(inv)}
-                              className="px-2 py-1 rounded border border-surface-container-highest hover:border-inverse-surface text-secondary hover:text-inverse-surface flex items-center gap-1 transition-colors cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg border border-slate-300 hover:border-blue-500 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-800 font-bold flex items-center gap-1 transition-all shadow-2xs cursor-pointer text-xs"
                               title="Edit Spec"
                             >
                               <span className="material-symbols-outlined text-[15px]">edit</span>
                               <span>Edit</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleToggleArchiveInverter(inv)}
-                              className={`p-1 rounded border border-surface-container-highest transition-colors cursor-pointer ${
-                                inv.isArchived ? 'hover:text-primary text-secondary' : 'hover:text-error text-secondary'
+                              className={`p-1.5 rounded-lg border border-slate-300 bg-white transition-all shadow-2xs cursor-pointer ${
+                                inv.isArchived ? 'hover:border-emerald-500 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700' : 'hover:border-amber-400 hover:bg-amber-50 text-slate-600 hover:text-amber-700'
                               }`}
                               title={inv.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
                             >
                               <span className="material-symbols-outlined text-[16px]">{inv.isArchived ? 'unarchive' : 'archive'}</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteInverter(inv)}
-                              className="p-1 rounded border border-surface-container-highest hover:border-error text-secondary hover:text-error transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg border border-slate-300 bg-white hover:border-rose-400 hover:bg-rose-50 text-slate-600 hover:text-rose-700 transition-all shadow-2xs cursor-pointer"
                               title="Delete Spec"
                             >
                               <span className="material-symbols-outlined text-[16px]">delete</span>
@@ -1477,74 +1936,77 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-11 border-b border-surface-container-lowest/10">
-                  <th className="px-4 py-2 font-label-sm">Brand / OEM</th>
-                  <th className="px-4 py-2 font-label-sm">Model</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Rated Capacity</th>
-                  <th className="px-4 py-2 font-label-sm">Grid Phase &amp; MPPT</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Euro Efficiency</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Inverter Base Price (₹)</th>
-                  <th className="px-4 py-2 font-label-sm">Replacement Warranty</th>
-                  <th className="px-4 py-2 font-label-sm text-center">Dealer Quoting</th>
-                  <th className="px-4 py-2 font-label-sm text-right">Actions</th>
+                <tr className="bg-slate-900 text-white text-xs font-bold uppercase tracking-wider h-11 border-b border-slate-800">
+                  <th className="px-4 py-3">Brand / OEM</th>
+                  <th className="px-4 py-3">Model</th>
+                  <th className="px-4 py-3 text-right">Rated Capacity</th>
+                  <th className="px-4 py-3">Grid Phase &amp; MPPT</th>
+                  <th className="px-4 py-3 text-right">Euro Efficiency</th>
+                  <th className="px-4 py-3 text-right">Inverter Base Price (₹)</th>
+                  <th className="px-4 py-3">Replacement Warranty</th>
+                  <th className="px-4 py-3 text-center">Dealer Quoting</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-surface-container-highest font-body-md text-on-surface">
+              <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-900 bg-white">
                 {filteredInverters.map((inv, idx) => {
                   const initial = inv.brand ? inv.brand.slice(0, 2).toUpperCase() : 'IN';
                   return (
-                    <tr key={inv.id || idx} className={`hover:bg-surface-container-low/60 transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/30' : ''}`}>
+                    <tr key={inv.id || idx} className={`hover:bg-slate-50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="w-7 h-7 rounded bg-primary-container/20 text-primary font-bold text-xs flex items-center justify-center border border-primary-container/40">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-7 h-7 rounded-lg bg-blue-50 text-blue-800 font-bold text-xs flex items-center justify-center border border-blue-200">
                             {initial}
                           </span>
-                          <span className="font-semibold text-inverse-surface">{inv.brand}</span>
+                          <span className="font-bold text-slate-900 text-sm">{inv.brand}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-inverse-surface">{inv.model}</td>
-                      <td className="px-4 py-3 text-right font-bold text-inverse-surface font-mono">{getInverterCapacityText(inv)}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{inv.model}</td>
+                      <td className="px-4 py-3 text-right font-extrabold text-slate-900 font-mono text-sm">{getInverterCapacityText(inv)}</td>
                       <td className="px-4 py-3">
-                        <span className="inline-block px-2 py-0.5 rounded-full text-label-xs font-semibold bg-surface-container-high text-on-surface">
+                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold border bg-purple-50 text-purple-800 border-purple-200">
                           {inv.phase || '3-Phase'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-primary font-mono">{inv.efficiency || '98.6%'}</td>
-                      <td className="px-4 py-3 text-right font-bold text-inverse-surface font-mono">{inv.basePrice || '₹ 54,000'}</td>
-                      <td className="px-4 py-3 text-body-sm text-secondary">{inv.warranty || '8 Years Comprehensive'}</td>
+                      <td className="px-4 py-3 text-right font-extrabold text-emerald-700 font-mono text-sm">{inv.efficiency || '98.6%'}</td>
+                      <td className="px-4 py-3 text-right font-extrabold text-slate-900 font-mono text-sm">{inv.basePrice || '₹ 54,000'}</td>
+                      <td className="px-4 py-3 text-slate-700 font-medium">{inv.warranty || '8 Years Comprehensive'}</td>
                       <td className="px-4 py-3 text-center">
                         {inv.isArchived ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary">
-                            <span className="w-2 h-2 rounded-full bg-secondary/60"></span> Archived
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Archived
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
-                            <span className="w-2 h-2 rounded-full bg-primary-container"></span> Active
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Active
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5 text-secondary">
+                        <div className="flex items-center justify-end gap-1.5 text-slate-600">
                           <button
+                            type="button"
                             onClick={() => handleEditInverter(inv)}
-                            className="p-1 hover:text-inverse-surface transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg border border-slate-300 hover:border-blue-500 hover:text-blue-700 bg-white transition-colors cursor-pointer shadow-2xs"
                             title="Edit Spec"
                           >
-                            <span className="material-symbols-outlined">edit</span>
+                            <span className="material-symbols-outlined text-[16px]">edit</span>
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleToggleArchiveInverter(inv)}
-                            className={`p-1 transition-colors cursor-pointer ${inv.isArchived ? 'hover:text-primary text-secondary' : 'hover:text-error text-secondary'}`}
+                            className={`p-1.5 rounded-lg border border-slate-300 bg-white transition-colors cursor-pointer shadow-2xs ${inv.isArchived ? 'hover:border-emerald-500 hover:text-emerald-700' : 'hover:border-amber-400 hover:text-amber-700'}`}
                             title={inv.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
                           >
-                            <span className="material-symbols-outlined">{inv.isArchived ? 'unarchive' : 'archive'}</span>
+                            <span className="material-symbols-outlined text-[16px]">{inv.isArchived ? 'unarchive' : 'archive'}</span>
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDeleteInverter(inv)}
-                            className="p-1 hover:text-error transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg border border-slate-300 bg-white hover:border-rose-400 hover:text-rose-700 transition-colors cursor-pointer shadow-2xs"
                             title="Delete Spec"
                           >
-                            <span className="material-symbols-outlined">delete</span>
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
                           </button>
                         </div>
                       </td>
@@ -1562,26 +2024,52 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
       {activeTab === 'bos' && (
         <div className="mt-6 space-y-6">
           {/* BOM Catalog Header Card */}
-          <div className="bg-surface-container-lowest rounded-xl border border-surface-container-highest shadow-sm p-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 mb-4 border-b border-surface-container-highest gap-4">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 sm:p-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 mb-4 border-b border-slate-200 gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-headline-sm text-headline-sm text-inverse-surface font-bold">
+                  <h2 className="font-heading text-slate-900 font-extrabold text-base sm:text-lg">
                     Bill of Materials (BOM) Hardware Catalog
                   </h2>
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 text-label-xs font-bold border border-emerald-500/20">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     Live Supabase DB Synced
                   </span>
                 </div>
-                <p className="font-body-sm text-body-sm text-secondary mt-1">
+                <p className="text-xs text-slate-500 font-medium mt-1">
                   Manage standard structural members, DC/AC switchgear, cables, conduits, and accessories dynamically synced with Quotation Presets.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Hidden file input for BOM CSV/Excel import */}
+                <input
+                  ref={bomFileInputRef}
+                  type="file"
+                  accept=".csv,.xls,.xlsx,.txt"
+                  className="hidden"
+                  onChange={handleBomFileSelect}
+                />
+                <button
+                  type="button"
+                  onClick={handleOpenImportBom}
+                  className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition-all shadow-xs text-xs sm:text-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-slate-500">upload_file</span>
+                  <span>Import BOM (Excel/CSV)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetToMasterBom}
+                  className="flex items-center gap-1.5 px-3 py-2 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl transition-all shadow-xs cursor-pointer text-xs sm:text-sm"
+                  title="Load official 24-item Gujarat Rooftop BOM specifications and rates from Excel"
+                >
+                  <span className="material-symbols-outlined text-[18px]">sync</span>
+                  <span>Load Master BOM (24 Items)</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleOpenAddBom}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-primary-container hover:bg-primary text-on-primary font-label-md font-bold rounded-lg shadow-sm transition-colors cursor-pointer text-xs sm:text-sm"
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition-all cursor-pointer text-xs sm:text-sm"
                 >
                   <span className="material-symbols-outlined text-[18px]">add_circle</span>
                   <span>+ Add BOM Component</span>
@@ -1590,20 +2078,20 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
             </div>
 
             {/* Filter and Search Bar */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
               <div className="relative flex-1 max-w-md">
-                <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-[20px]">search</span>
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-[20px]">search</span>
                 <input
                   type="text"
                   placeholder="Search BOM by name, OEM make, or spec..."
                   value={bomSearch}
                   onChange={(e) => setBomSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-body-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container focus:border-primary-container placeholder-secondary/60"
+                  className="w-full pl-10 pr-3 py-2 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs font-medium"
                 />
                 {bomSearch && (
                   <button
                     onClick={() => setBomSearch('')}
-                    className="absolute right-2.5 top-2.5 text-secondary hover:text-on-surface cursor-pointer"
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[18px]">close</span>
                   </button>
@@ -1612,7 +2100,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
 
               <div className="flex items-center gap-3 overflow-x-auto pb-1">
                 {/* Category Filters */}
-                <div className="flex items-center gap-1.5 bg-surface-container-low p-1 rounded-lg border border-surface-container-highest text-xs font-semibold">
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
                   {[
                     { id: 'all', label: `All (${(bomCatalog || []).length})` },
                     { id: 'structure', label: 'Structure' },
@@ -1626,10 +2114,10 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                       key={tab.id}
                       type="button"
                       onClick={() => setBomCategoryFilter(tab.id)}
-                      className={`px-2.5 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer text-xs font-bold ${
                         bomCategoryFilter === tab.id
-                          ? 'bg-surface-container-lowest text-inverse-surface shadow-xs font-bold'
-                          : 'text-secondary hover:text-inverse-surface'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
                       {tab.label}
@@ -1644,103 +2132,112 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
 
             {/* Catalog Items Display: Cards or Table */}
             {filteredBomCatalog.length === 0 ? (
-              <div className="p-8 text-center bg-surface-container-low/40 rounded-xl border border-dashed border-surface-container-highest">
-                <span className="material-symbols-outlined text-4xl text-secondary mb-2">inventory_2</span>
-                <p className="font-label-md text-secondary">No BOM components match your search or filter.</p>
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">inventory_2</span>
+                <p className="text-sm font-semibold text-slate-600">No BOM components match your search or filter.</p>
                 <button
                   type="button"
                   onClick={handleOpenAddBom}
-                  className="mt-3 px-3.5 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold cursor-pointer inline-flex items-center gap-1"
+                  className="mt-3 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer inline-flex items-center gap-1 shadow-xs transition-all"
                 >
                   <span className="material-symbols-outlined text-sm">add</span>
                   <span>Add First BOM Component</span>
                 </button>
               </div>
             ) : bomViewMode === 'cards' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
                 {filteredBomCatalog.map((item) => {
                   const catColors = {
-                    structure: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30',
-                    electrical: 'bg-amber-500/10 text-amber-700 border-amber-500/30',
-                    cables: 'bg-blue-500/10 text-blue-700 border-blue-500/30',
-                    conduits: 'bg-cyan-500/10 text-cyan-700 border-cyan-500/30',
-                    safety: 'bg-purple-500/10 text-purple-700 border-purple-500/30',
-                    other: 'bg-slate-500/10 text-slate-700 border-slate-500/30'
+                    structure: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+                    electrical: 'bg-amber-100 text-amber-800 border-amber-300',
+                    cables: 'bg-blue-100 text-blue-800 border-blue-300',
+                    conduits: 'bg-cyan-100 text-cyan-800 border-cyan-300',
+                    safety: 'bg-purple-100 text-purple-800 border-purple-300',
+                    other: 'bg-slate-100 text-slate-800 border-slate-300'
                   };
                   const badgeColor = catColors[item.category] || catColors.other;
+                  const itemRate = getBomItemRate(item);
 
                   return (
                     <div
                       key={item.id}
-                      className={`p-4 rounded-xl border transition-all ${
+                      className={`p-4 sm:p-5 rounded-2xl border-2 transition-all flex flex-col justify-between gap-3.5 group ${
                         item.isArchived
-                          ? 'border-surface-container-highest bg-surface-container-low/50 opacity-70'
-                          : 'border-surface-container-highest bg-surface-container-lowest hover:border-primary-container/40 shadow-xs'
+                          ? 'border-slate-200 bg-slate-50/70 opacity-70'
+                          : 'border-slate-200/90 bg-white hover:border-emerald-500/70 hover:shadow-md shadow-xs'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold border uppercase tracking-wider ${badgeColor}`}>
-                          {item.category || 'Hardware'}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleEditBom(item)}
-                            className="p-1 rounded hover:bg-surface-container text-secondary hover:text-on-surface cursor-pointer"
-                            title="Edit Component"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">edit</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleArchiveBom(item)}
-                            className="p-1 rounded hover:bg-surface-container text-secondary hover:text-primary cursor-pointer"
-                            title={item.isArchived ? 'Restore Component' : 'Archive Component'}
-                          >
-                            <span className="material-symbols-outlined text-[16px]">
-                              {item.isArchived ? 'unarchive' : 'archive'}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteBom(item)}
-                            className="p-1 rounded hover:bg-rose-50 text-secondary hover:text-rose-600 cursor-pointer"
-                            title="Delete Component"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
-                          </button>
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2.5">
+                          <span className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border uppercase tracking-wider ${badgeColor}`}>
+                            {item.category || 'Hardware'}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleEditBom(item)}
+                              className="p-1.5 rounded-lg border border-slate-300 hover:border-emerald-500 hover:text-emerald-700 bg-white text-slate-600 transition-colors cursor-pointer shadow-2xs"
+                              title="Edit Component"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleArchiveBom(item)}
+                              className={`p-1.5 rounded-lg border border-slate-300 bg-white transition-colors cursor-pointer shadow-2xs ${
+                                item.isArchived ? 'hover:border-emerald-500 hover:text-emerald-700 text-slate-600' : 'hover:border-amber-400 hover:text-amber-700 text-slate-600'
+                              }`}
+                              title={item.isArchived ? 'Restore Component' : 'Archive Component'}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">
+                                {item.isArchived ? 'unarchive' : 'archive'}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteBom(item)}
+                              className="p-1.5 rounded-lg border border-slate-300 bg-white hover:border-rose-400 hover:text-rose-700 text-slate-600 transition-colors cursor-pointer shadow-2xs"
+                              title="Delete Component"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
+                          </div>
                         </div>
+
+                        <h3 className="font-bold text-slate-900 text-base leading-snug line-clamp-1 group-hover:text-emerald-700 transition-colors">
+                          {item.name}
+                        </h3>
+                        {item.spec && (
+                          <p className="text-xs text-slate-600 font-medium mt-1 line-clamp-2 leading-relaxed">{item.spec}</p>
+                        )}
                       </div>
 
-                      <h3 className="font-label-md text-sm font-bold text-inverse-surface line-clamp-1">
-                        {item.name}
-                      </h3>
-                      {item.spec && (
-                        <p className="text-xs text-secondary mt-0.5 line-clamp-2">{item.spec}</p>
-                      )}
-
-                      <div className="mt-3 pt-3 border-t border-surface-container-highest flex items-center justify-between text-xs">
+                      {/* Benchmark & Rate Box */}
+                      <div className="bg-gradient-to-r from-slate-50 to-emerald-50/30 p-3 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs">
                         <div>
-                          <span className="text-secondary block text-[10px]">OEM / Make:</span>
-                          <span className="font-semibold text-on-surface">{item.make || 'Standard'}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">OEM / Make</span>
+                          <span className="font-extrabold text-slate-800 text-xs mt-0.5 block">{item.make || 'Standard'}</span>
                         </div>
                         <div className="text-right">
-                          <span className="text-secondary block text-[10px]">Unit Benchmark:</span>
-                          <span className="font-mono font-bold text-primary">
-                            ₹ {item.rate !== undefined ? Number(item.rate).toLocaleString('en-IN') : '—'}
-                            <span className="text-secondary font-normal text-[11px]">/{item.unit || 'Nos'}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Unit Benchmark</span>
+                          <span className="font-mono font-extrabold text-emerald-700 text-sm mt-0.5 block">
+                            ₹ {itemRate.toLocaleString('en-IN')}
+                            <span className="text-slate-600 font-bold text-xs ml-0.5">/{item.unit || 'Nos'}</span>
                           </span>
                         </div>
                       </div>
 
-                      <div className="mt-2 flex items-center justify-between text-[11px] text-secondary">
-                        <span>GST: {item.gstRate || 18}%</span>
+                      <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                        <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 text-[11px] font-mono">
+                          GST: {item.gstRate || 18}%
+                        </span>
                         {item.isArchived ? (
-                          <span className="text-secondary italic">Archived</span>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Archived
+                          </span>
                         ) : (
-                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Active
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Active
                           </span>
                         )}
                       </div>
@@ -1749,94 +2246,95 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                 })}
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-surface-container-highest">
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
                 <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
-                    <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-11 border-b border-surface-container-lowest/10">
-                      <th className="px-4 py-2 font-label-sm">Component Name &amp; Spec</th>
-                      <th className="px-3 py-2 font-label-sm">Category</th>
-                      <th className="px-3 py-2 font-label-sm">OEM / Make</th>
-                      <th className="px-3 py-2 font-label-sm text-center">Unit</th>
-                      <th className="px-3 py-2 font-label-sm text-right">Unit Rate (₹)</th>
-                      <th className="px-3 py-2 font-label-sm text-center">GST %</th>
-                      <th className="px-3 py-2 font-label-sm text-center">Status</th>
-                      <th className="px-4 py-2 font-label-sm text-right">Actions</th>
+                    <tr className="bg-slate-900 text-white text-xs font-bold uppercase tracking-wider h-11 border-b border-slate-800">
+                      <th className="px-4 py-3">Component Name &amp; Spec</th>
+                      <th className="px-3 py-3">Category</th>
+                      <th className="px-3 py-3">OEM / Make</th>
+                      <th className="px-3 py-3 text-center">Unit</th>
+                      <th className="px-3 py-3 text-right">Unit Rate (₹)</th>
+                      <th className="px-3 py-3 text-center">GST %</th>
+                      <th className="px-3 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
+                  <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-900 bg-white">
                     {filteredBomCatalog.map((item, idx) => {
                       const catColors = {
-                        structure: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30',
-                        electrical: 'bg-amber-500/10 text-amber-700 border-amber-500/30',
-                        cables: 'bg-blue-500/10 text-blue-700 border-blue-500/30',
-                        conduits: 'bg-cyan-500/10 text-cyan-700 border-cyan-500/30',
-                        safety: 'bg-purple-500/10 text-purple-700 border-purple-500/30',
-                        other: 'bg-slate-500/10 text-slate-700 border-slate-500/30'
+                        structure: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+                        electrical: 'bg-amber-100 text-amber-800 border-amber-300',
+                        cables: 'bg-blue-100 text-blue-800 border-blue-300',
+                        conduits: 'bg-cyan-100 text-cyan-800 border-cyan-300',
+                        safety: 'bg-purple-100 text-purple-800 border-purple-300',
+                        other: 'bg-slate-100 text-slate-800 border-slate-300'
                       };
                       const badgeColor = catColors[item.category] || catColors.other;
+                      const itemRate = getBomItemRate(item);
 
                       return (
                         <tr
                           key={item.id || idx}
-                          className={`hover:bg-surface-container-low/60 transition-colors ${
-                            idx % 2 === 1 ? 'bg-surface-container-low/20' : ''
+                          className={`hover:bg-slate-50 transition-colors ${
+                            idx % 2 === 1 ? 'bg-slate-50/40' : ''
                           }`}
                         >
                           <td className="px-4 py-3">
-                            <div className="font-semibold text-inverse-surface">{item.name}</div>
+                            <div className="font-bold text-slate-900 text-sm">{item.name}</div>
                             {item.spec && (
-                              <div className="text-[11px] text-secondary mt-0.5 line-clamp-1">{item.spec}</div>
+                              <div className="text-xs text-slate-600 mt-0.5 line-clamp-1">{item.spec}</div>
                             )}
                           </td>
                           <td className="px-3 py-3">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${badgeColor}`}>
+                            <span className={`inline-block px-2.5 py-0.5 rounded text-[11px] font-bold border uppercase tracking-wider ${badgeColor}`}>
                               {item.category || 'Hardware'}
                             </span>
                           </td>
-                          <td className="px-3 py-3 font-medium text-secondary">{item.make || 'Standard'}</td>
-                          <td className="px-3 py-3 text-center font-mono font-semibold">{item.unit || 'Nos'}</td>
-                          <td className="px-3 py-3 text-right font-mono font-bold text-primary">
-                            ₹ {item.rate !== undefined ? Number(item.rate).toLocaleString('en-IN') : '—'}
+                          <td className="px-3 py-3 font-semibold text-slate-700">{item.make || 'Standard'}</td>
+                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-800">{item.unit || 'Nos'}</td>
+                          <td className="px-3 py-3 text-right font-mono font-extrabold text-slate-900 text-sm">
+                            ₹ {itemRate.toLocaleString('en-IN')}
                           </td>
-                          <td className="px-3 py-3 text-center font-mono">{item.gstRate || 18}%</td>
+                          <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{item.gstRate || 18}%</td>
                           <td className="px-3 py-3 text-center">
                             {item.isArchived ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary">
-                                <span className="w-1.5 h-1.5 rounded-full bg-secondary/60"></span> Archived
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Archived
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Active
                               </span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5 text-secondary">
+                            <div className="flex items-center justify-end gap-1.5 text-slate-600">
                               <button
                                 type="button"
                                 onClick={() => handleEditBom(item)}
-                                className="p-1 hover:text-inverse-surface transition-colors cursor-pointer"
+                                className="p-1.5 rounded-lg border border-slate-300 hover:border-emerald-500 hover:text-emerald-700 bg-white transition-colors cursor-pointer shadow-2xs"
                                 title="Edit Component"
                               >
-                                <span className="material-symbols-outlined text-[18px]">edit</span>
+                                <span className="material-symbols-outlined text-[16px]">edit</span>
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleToggleArchiveBom(item)}
-                                className="p-1 hover:text-primary transition-colors cursor-pointer"
+                                className={`p-1.5 rounded-lg border border-slate-300 bg-white transition-colors cursor-pointer shadow-2xs ${item.isArchived ? 'hover:border-emerald-500 hover:text-emerald-700' : 'hover:border-amber-400 hover:text-amber-700'}`}
                                 title={item.isArchived ? 'Restore Component' : 'Archive Component'}
                               >
-                                <span className="material-symbols-outlined text-[18px]">
+                                <span className="material-symbols-outlined text-[16px]">
                                   {item.isArchived ? 'unarchive' : 'archive'}
                                 </span>
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteBom(item)}
-                                className="p-1 hover:text-error transition-colors cursor-pointer"
+                                className="p-1.5 rounded-lg border border-slate-300 bg-white hover:border-rose-400 hover:text-rose-700 transition-colors cursor-pointer shadow-2xs"
                                 title="Delete Component"
                               >
-                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
                               </button>
                             </div>
                           </td>
@@ -2426,6 +2924,150 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
       )}
 
       {/* ============================================================= */}
+      {/* IMPORT BOM COMPONENTS MODAL                                   */}
+      {/* ============================================================= */}
+      {showImportBomModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-surface-container-lowest rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-surface-container-highest animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-surface-container-low shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-2xl">inventory_2</span>
+                </div>
+                <div>
+                  <h3 className="font-headline-sm text-base sm:text-lg font-bold text-on-surface">
+                    Import BOM Hardware Components (Excel / CSV)
+                  </h3>
+                  <p className="text-xs text-secondary mt-0.5">
+                    Upload an Excel or CSV file containing component names, makes/brands, categories, units, and rates.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportBomModal(false)}
+                className="w-8 h-8 rounded-full hover:bg-surface-container flex items-center justify-center text-secondary cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <div className="py-4 space-y-4 overflow-y-auto flex-1">
+              {/* Upload Zone */}
+              <div
+                className="border-2 border-dashed border-surface-container-highest rounded-xl p-6 text-center flex flex-col items-center gap-3 hover:border-emerald-600/50 transition-colors cursor-pointer bg-surface-container-low/40"
+                onClick={() => bomFileInputRef.current?.click()}
+              >
+                <span className="material-symbols-outlined text-4xl text-emerald-600">cloud_upload</span>
+                <div>
+                  <p className="font-bold text-on-surface text-sm">
+                    {bomImportFileName ? bomImportFileName : 'Click to Select BOM CSV / Excel File'}
+                  </p>
+                  <p className="text-xs text-secondary mt-1">
+                    Supports .csv, .xlsx, .xls, .txt · Structure, Cables, Electrical, Conduits, Safety
+                  </p>
+                </div>
+                {bomImportFileName && !bomImportError && importedBomPreviewItems.length === 0 && (
+                  <span className="text-xs text-amber-600 font-semibold">Parsing BOM items…</span>
+                )}
+              </div>
+
+              {/* Error Banner */}
+              {bomImportError && (
+                <div className="p-3 rounded-xl bg-error/10 border border-error/20 flex items-start gap-2 text-error text-xs">
+                  <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
+                  <span>{bomImportError}</span>
+                </div>
+              )}
+
+              {/* Preview Table */}
+              {importedBomPreviewItems.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-bold text-on-surface">
+                      Preview: {importedBomPreviewItems.length} BOM component{importedBomPreviewItems.length > 1 ? 's' : ''} parsed
+                    </p>
+                    <span className="text-[11px] text-secondary">Confirm below to import into catalog</span>
+                  </div>
+                  <div className="overflow-x-auto border border-surface-container-highest rounded-xl max-h-[280px]">
+                    <table className="w-full text-left text-xs border-collapse min-w-[600px]">
+                      <thead className="sticky top-0 bg-surface-container-low z-10">
+                        <tr className="text-secondary font-semibold uppercase tracking-wide text-[11px]">
+                          <th className="px-3 py-2">Item Name</th>
+                          <th className="px-3 py-2">Make / Brand</th>
+                          <th className="px-3 py-2">Category</th>
+                          <th className="px-3 py-2">Unit</th>
+                          <th className="px-3 py-2 text-right">Default Rate</th>
+                          <th className="px-3 py-2">Specs</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-surface-container-highest text-on-surface">
+                        {importedBomPreviewItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-surface-container-low/50 transition-colors">
+                            <td className="px-3 py-2 font-semibold text-inverse-surface">{item.name}</td>
+                            <td className="px-3 py-2 text-secondary">{item.make}</td>
+                            <td className="px-3 py-2">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-container-high text-inverse-surface capitalize">
+                                {item.category}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-secondary">{item.unit}</td>
+                            <td className="px-3 py-2 text-right font-mono text-emerald-700 font-bold">
+                              ₹ {Number(item.defaultRate || item.rate).toLocaleString('en-IN')}
+                            </td>
+                            <td className="px-3 py-2 text-secondary text-[11px] truncate max-w-[150px]">{item.specs || item.description || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-surface-container-low flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-secondary">
+                <span>Need Gujarat Rooftop format sample?</span>
+                <button
+                  type="button"
+                  onClick={handleDownloadSampleBomCsvTemplate}
+                  className="inline-flex items-center gap-1 text-primary hover:underline font-semibold cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">download</span>
+                  <span>Download Master BOM (24 Items) CSV</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-surface-container-low flex items-center justify-end gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowImportBomModal(false)}
+                className="px-4 py-2 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => bomFileInputRef.current?.click()}
+                className="px-4 py-2 rounded-lg border border-surface-container-highest bg-surface-container-low text-on-surface text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-sm">folder_open</span>
+                <span>Browse File</span>
+              </button>
+              <button
+                type="button"
+                disabled={importedBomPreviewItems.length === 0}
+                onClick={handleConfirmBomImport}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-surface-container-lowest text-xs font-bold shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">add_circle</span>
+                <span>Import {importedBomPreviewItems.length > 0 ? `${importedBomPreviewItems.length} BOM Items` : 'BOM Items'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================= */}
       {/* BULK PRICE UPDATE MODAL (SR-22)                                */}
       {/* ============================================================= */}
       {showBulkPriceModal && (
@@ -2637,20 +3279,51 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Component Category *</label>
-                  <select
-                    value={bomForm.category}
-                    onChange={(e) => setBomForm({ ...bomForm, category: e.target.value })}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface"
-                  >
-                    <option value="structure">Mounting Structure</option>
-                    <option value="electrical">Electrical &amp; Switchgear</option>
-                    <option value="cables">Solar Cables &amp; Wiring</option>
-                    <option value="conduits">Conduits &amp; Piping</option>
-                    <option value="safety">Safety &amp; Earthing</option>
-                    <option value="metering">Metering &amp; Auxiliary</option>
-                    <option value="other">Custom Hardware</option>
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-secondary">Component Category *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingCustomCategory(!isAddingCustomCategory)}
+                      className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
+                    >
+                      {isAddingCustomCategory ? 'Cancel' : '+ New Category'}
+                    </button>
+                  </div>
+                  {isAddingCustomCategory ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="e.g. Civil Works"
+                        value={customCategoryInput}
+                        onChange={(e) => setCustomCategoryInput(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-surface-container-highest bg-surface-container-lowest text-on-surface"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomCategory}
+                        className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={bomForm.category}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setIsAddingCustomCategory(true);
+                        } else {
+                          setBomForm({ ...bomForm, category: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface cursor-pointer"
+                    >
+                      {availableCategories.map(cat => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                      <option value="__add_new__">+ Add Custom Category...</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -2667,20 +3340,51 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Standard Unit *</label>
-                  <select
-                    value={bomForm.unit}
-                    onChange={(e) => setBomForm({ ...bomForm, unit: e.target.value })}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface"
-                  >
-                    <option value="Nos">Nos</option>
-                    <option value="Meter">Meter</option>
-                    <option value="Set">Set</option>
-                    <option value="Pair">Pair</option>
-                    <option value="Kg">Kg</option>
-                    <option value="Box">Box</option>
-                    <option value="Roll">Roll</option>
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-secondary">Standard Unit *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingCustomUnit(!isAddingCustomUnit)}
+                      className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
+                    >
+                      {isAddingCustomUnit ? 'Cancel' : '+ New Unit'}
+                    </button>
+                  </div>
+                  {isAddingCustomUnit ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="e.g. Packet, Nos"
+                        value={customUnitInput}
+                        onChange={(e) => setCustomUnitInput(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-surface-container-highest bg-surface-container-lowest text-on-surface"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomUnit}
+                        className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={bomForm.unit}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setIsAddingCustomUnit(true);
+                        } else {
+                          setBomForm({ ...bomForm, unit: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface cursor-pointer"
+                    >
+                      {availableUnits.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="__add_new__">+ Add Custom Unit...</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -2705,7 +3409,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                   <select
                     value={bomForm.gstRate}
                     onChange={(e) => setBomForm({ ...bomForm, gstRate: e.target.value })}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface font-mono"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface font-mono cursor-pointer"
                   >
                     <option value="18">18% (Standard)</option>
                     <option value="12">12%</option>
@@ -2746,6 +3450,105 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================= */}
+      {/* CUSTOM PURE UI HARDWARE DELETION / ARCHIVE CONFIRMATION MODAL */}
+      {/* ============================================================= */}
+      {deleteModalState && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95 space-y-4">
+            {/* Header with Danger / Warning badge */}
+            <div className="flex items-start gap-3.5">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                deleteModalState.isRestore
+                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                  : deleteModalState.isArchive
+                    ? 'bg-amber-50 text-amber-600 border border-amber-200'
+                    : 'bg-rose-50 text-rose-600 border border-rose-200'
+              }`}>
+                <span className="material-symbols-outlined text-2xl">
+                  {deleteModalState.isRestore ? 'unarchive' : deleteModalState.isArchive ? 'archive' : 'delete_forever'}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                  {deleteModalState.badge || 'Hardware Catalog'}
+                </span>
+                <h3 className="font-bold text-slate-900 text-lg leading-tight mt-0.5">
+                  {deleteModalState.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteModalState(null)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Hardware Item Info Box */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+              <div className="text-sm font-bold text-slate-900">
+                {deleteModalState.itemName}
+              </div>
+              {deleteModalState.itemDetails && (
+                <div className="text-xs text-slate-600">
+                  {deleteModalState.itemDetails}
+                </div>
+              )}
+              {deleteModalState.itemRate && (
+                <div className="text-xs font-mono font-bold text-emerald-700 pt-0.5">
+                  Rate: {deleteModalState.itemRate}
+                </div>
+              )}
+            </div>
+
+            {/* Warning Text */}
+            <div className={`text-xs p-3 rounded-xl border flex items-start gap-2 ${
+              deleteModalState.isRestore
+                ? 'bg-emerald-50/60 text-emerald-800 border-emerald-200'
+                : deleteModalState.isArchive
+                  ? 'bg-amber-50/60 text-amber-800 border-amber-200'
+                  : 'bg-rose-50/60 text-rose-800 border-rose-200'
+            }`}>
+              <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">
+                {deleteModalState.isRestore ? 'info' : 'warning'}
+              </span>
+              <span className="leading-relaxed">
+                {deleteModalState.warning}
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteModalState(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 min-h-[44px] cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteModalState.onConfirm}
+                className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs min-h-[44px] cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors ${
+                  deleteModalState.isRestore
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : deleteModalState.isArchive
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {deleteModalState.isRestore ? 'check_circle' : deleteModalState.isArchive ? 'archive' : 'delete'}
+                </span>
+                <span>{deleteModalState.confirmButtonText || 'Confirm'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

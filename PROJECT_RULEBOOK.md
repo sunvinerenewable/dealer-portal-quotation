@@ -167,22 +167,23 @@
 ## Rule 9: Direct Database Single Source of Truth (Zero Cache-Only / Zero LocalStorage-Only Data)
 
 ### 9.1 Mandatory Direct Database Persistence
-- **STRICT REQUIREMENT**: Any data added, created, edited, updated, or deleted anywhere in this project (leads, customer files, staff records, dealer accounts, quotations, custom pricing matrices, system settings, document master configurations, notes, stages, etc.) MUST be written directly to the database (Supabase / PostgreSQL) via backend APIs or database services.
+- **STRICT REQUIREMENT ACROSS ALL BRANCHES**: Regardless of which branch code is updated in (`devlopment`, `sumit-updates`, `main`), any data created, edited, updated, or deleted anywhere in this project MUST be written directly to the database (Supabase / PostgreSQL) via backend APIs or database services.
+- **Universal Scope**: Includes user credentials, materials / hardware items, pricing matrices, custom categories, custom units, customer files, leads, staff records, dealer accounts, quotations, BOM items, audit logs, and system settings.
 - Data MUST NEVER be stored exclusively in browser memory, React state, or `localStorage`.
 
 ### 9.2 Direct Database Fetch on Mount & Hard Refresh
 - The database is the **Sole Single Source of Truth**.
 - On initial portal boot, tab switch, navigation, and especially upon a **hard refresh** (`Ctrl + Shift + R` or `F5`), the application MUST fetch active, live records directly from the database.
-- Data must never disappear or revert to blank / stale mock data after a hard browser reload.
+- Data must never disappear, desync, or revert to blank / stale mock data after a hard browser reload.
 
 ### 9.3 Client Cache & LocalStorage Restrictions
 - `localStorage` and client caches may only be used for active authentication tokens / session cookies or non-critical ephemeral UI preferences (e.g. collapsed sidebar state).
 - Business entities, application records, and configurations must NEVER rely on `localStorage` as the source of truth.
-- Whenever an entity is modified, cached query data must be actively invalidated or refetched from the database to maintain 100% data consistency between the backend and UI.
+- Direct database query takes absolute precedence over static serverless caches on mount and hard refresh.
 
 ### 9.4 Mandatory Enforcement on Every Prompt
 - For every user prompt, feature implementation, and bugfix, the AI assistant and developer MUST review against Rule 9:
-  1. Did we ensure newly added data saves directly to the database?
+  1. Did we ensure newly added or modified data saves directly to the database?
   2. Did we ensure that reloading/hard-refreshing the page fetches the freshly saved data directly from the database?
   3. Is zero business data lost upon browser cache flush?
 

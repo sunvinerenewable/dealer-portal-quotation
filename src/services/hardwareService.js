@@ -33,66 +33,35 @@ export const hardwareService = {
    * Fetch all solar modules from Supabase
    */
   async getAllModules() {
-    // 1. Fast Cache-Aside via serverless /api/catalog
-    try {
-      const res = await fetch('/api/catalog?type=hardware');
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json?.hardware?.modules) && json.hardware.modules.length > 0) {
-          return json.hardware.modules.map(row => ({
-            id: row.id,
-            brand: row.brand,
-            model: row.model,
-            wattage: Number(row.wattage) || 550,
-            cellTech: row.cell_tech || 'TOPCon Mono Bifacial',
-            efficiency: row.efficiency || '22.6%',
-            ratePerWp: row.rate_per_wp || '₹ 19.20/Wp',
-            warranty: row.warranty || '30 Years Performance',
-            dimensions: row.dimensions || '2278 × 1134 × 30 mm | 28 kg',
-            isArchived: !!row.is_archived,
-            isDefault: !!row.is_default,
-            isNew: !!row.is_new,
-            createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
-          }));
-        }
-      }
-    } catch (_) {}
-
-    // 2. Direct Supabase Query Fallback
+    // 1. Direct Supabase Query (Mandatory Single Source of Truth)
     try {
       const { data, error } = await supabase
         .from('solar_modules')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.warn('[hardwareService] Supabase modules fetch notice:', error.message);
-        return null;
+      if (!error && Array.isArray(data)) {
+        return data.map(row => ({
+          id: row.id,
+          brand: row.brand,
+          model: row.model,
+          wattage: Number(row.wattage) || 550,
+          cellTech: row.cell_tech || 'TOPCon Mono Bifacial',
+          efficiency: row.efficiency || '22.6%',
+          ratePerWp: row.rate_per_wp || '₹ 19.20/Wp',
+          warranty: row.warranty || '30 Years Performance',
+          dimensions: row.dimensions || '2278 × 1134 × 30 mm | 28 kg',
+          isArchived: !!row.is_archived,
+          isDefault: !!row.is_default,
+          isNew: !!row.is_new,
+          createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+        }));
       }
-
-      if (!data || data.length === 0) {
-        return null;
-      }
-
-      return data.map(row => ({
-        id: row.id,
-        brand: row.brand,
-        model: row.model,
-        wattage: Number(row.wattage) || 550,
-        cellTech: row.cell_tech || 'TOPCon Mono Bifacial',
-        efficiency: row.efficiency || '22.6%',
-        ratePerWp: row.rate_per_wp || '₹ 19.20/Wp',
-        warranty: row.warranty || '30 Years Performance',
-        dimensions: row.dimensions || '2278 × 1134 × 30 mm | 28 kg',
-        isArchived: !!row.is_archived,
-        isDefault: !!row.is_default,
-        isNew: !!row.is_new,
-        createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
-      }));
     } catch (err) {
-      console.error('[hardwareService] Error fetching modules:', err);
-      return null;
+      console.warn('[hardwareService] Direct Supabase fetch notice:', err);
     }
+
+    return [];
   },
 
   /**
@@ -258,64 +227,34 @@ export const hardwareService = {
    * Fetch all string inverters from Supabase
    */
   async getAllInverters() {
-    // 1. Fast Cache-Aside via serverless /api/catalog
-    try {
-      const res = await fetch('/api/catalog?type=hardware');
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json?.hardware?.inverters) && json.hardware.inverters.length > 0) {
-          return json.hardware.inverters.map(row => ({
-            id: row.id,
-            brand: row.brand,
-            model: row.model,
-            capacity: row.capacity || `${row.capacity_kw} kW`,
-            capacityKW: Number(row.capacity_kw) || 5.0,
-            phase: row.phase || 'Three Phase',
-            efficiency: row.efficiency || '98.4%',
-            warranty: row.warranty || '8 Years Comprehensive',
-            basePrice: row.base_price || '₹ 54,000',
-            isArchived: !!row.is_archived,
-            isDefault: !!row.is_default,
-            createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
-          }));
-        }
-      }
-    } catch (_) {}
-
-    // 2. Direct Supabase Query Fallback
+    // 1. Direct Supabase Query (Mandatory Single Source of Truth)
     try {
       const { data, error } = await supabase
         .from('solar_inverters')
         .select('*')
         .order('capacity_kw', { ascending: true });
 
-      if (error) {
-        console.warn('[hardwareService] Supabase inverters fetch notice:', error.message);
-        return null;
+      if (!error && Array.isArray(data)) {
+        return data.map(row => ({
+          id: row.id,
+          brand: row.brand,
+          model: row.model,
+          capacity: row.capacity || `${row.capacity_kw} kW`,
+          capacityKW: Number(row.capacity_kw) || 5.0,
+          phase: row.phase || 'Three Phase',
+          efficiency: row.efficiency || '98.4%',
+          warranty: row.warranty || '8 Years Comprehensive',
+          basePrice: row.base_price || '₹ 54,000',
+          isArchived: !!row.is_archived,
+          isDefault: !!row.is_default,
+          createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+        }));
       }
-
-      if (!data || data.length === 0) {
-        return null;
-      }
-
-      return data.map(row => ({
-        id: row.id,
-        brand: row.brand,
-        model: row.model,
-        capacity: row.capacity || `${row.capacity_kw} kW`,
-        capacityKW: Number(row.capacity_kw) || 5.0,
-        phase: row.phase || 'Three Phase',
-        efficiency: row.efficiency || '98.4%',
-        warranty: row.warranty || '8 Years Comprehensive',
-        basePrice: row.base_price || '₹ 54,000',
-        isArchived: !!row.is_archived,
-        isDefault: !!row.is_default,
-        createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
-      }));
     } catch (err) {
-      console.error('[hardwareService] Error fetching inverters:', err);
-      return null;
+      console.warn('[hardwareService] Direct Supabase inverters fetch notice:', err);
     }
+
+    return [];
   },
 
   /**
@@ -476,35 +415,35 @@ export const hardwareService = {
 
       if (error) {
         console.warn('[hardwareService] Supabase bom_catalog fetch error:', error.message);
-        return null;
+        return [];
       }
 
-      if (!data || data.length === 0) {
-        return null;
+      if (Array.isArray(data)) {
+        return data
+          .filter(row => !row.id.startsWith('bom-') || row.inverter_spec?.match(/structure|electrical|cables|conduits|safety/i))
+          .map(row => {
+            const rawRate = Number(row.capacity_kw) || 0;
+            return {
+              id: row.id,
+              name: row.modules_spec || row.id,
+              category: row.inverter_spec || 'structure',
+              description: row.dc_wire || '',
+              unit: row.ac_wire || 'Nos',
+              defaultRate: rawRate,
+              rate: rawRate,
+              make: row.hardware || 'Approved Make',
+              specs: row.earthing_wire || '',
+              gstRate: Number(row.la_wire) || 18,
+              isArchived: row.acdb === 'archived',
+              updatedAt: row.updated_at
+            };
+          });
       }
 
-      // Filter out capacity slab presets (e.g. bom-2_16, bom-3_24) vs actual hardware items
-      return data
-        .filter(row => !row.id.startsWith('bom-') || row.inverter_spec?.match(/structure|electrical|cables|conduits|safety/i))
-        .map(row => {
-          const rawRate = Number(row.capacity_kw) || 0;
-          return {
-            id: row.id,
-            name: row.modules_spec || row.id,
-            category: row.inverter_spec || 'structure',
-            description: row.dc_wire || '',
-            unit: row.ac_wire || 'Nos',
-            defaultRate: rawRate > 0 ? rawRate : 100,
-            make: row.hardware || 'Approved Make',
-            specs: row.earthing_wire || '',
-            gstRate: Number(row.la_wire) || 18,
-            isArchived: row.acdb === 'archived',
-            updatedAt: row.updated_at
-          };
-        });
+      return [];
     } catch (err) {
       console.error('[hardwareService] getAllBomItems exception:', err);
-      return null;
+      return [];
     }
   },
 
@@ -516,13 +455,17 @@ export const hardwareService = {
       return { success: false, error: 'Item name is required' };
     }
 
+    const parsedRate = item.defaultRate !== undefined && item.defaultRate !== null && !isNaN(Number(item.defaultRate))
+      ? Number(item.defaultRate)
+      : (item.rate !== undefined && item.rate !== null && !isNaN(Number(item.rate)) ? Number(item.rate) : 100);
+
     const payload = {
       id: item.id || `bom_hw_${Date.now()}`,
       modules_spec: item.name.trim(),
       inverter_spec: item.category || 'structure',
       dc_wire: item.description || '',
       ac_wire: item.unit || 'Nos',
-      capacity_kw: Number(item.defaultRate || item.rate) || 100,
+      capacity_kw: parsedRate,
       hardware: item.make || 'Approved Brand',
       earthing_wire: item.specs || '',
       la_wire: String(item.gstRate !== undefined ? item.gstRate : 18),
@@ -640,19 +583,25 @@ export const hardwareService = {
   async bulkImportBomItems(items) {
     if (!items || items.length === 0) return { success: true, count: 0 };
 
-    const payloads = items.map((it, idx) => ({
-      id: it.id || `bom_imp_${Date.now()}_${idx}`,
-      modules_spec: (it.name || it.description || 'Hardware Item').trim(),
-      inverter_spec: it.category || 'structure',
-      dc_wire: it.description || '',
-      ac_wire: it.unit || 'Nos',
-      capacity_kw: Number(it.defaultRate || it.rate) || 100,
-      hardware: it.make || 'Approved Brand',
-      earthing_wire: it.specs || '',
-      la_wire: String(it.gstRate !== undefined ? it.gstRate : 18),
-      acdb: it.isArchived ? 'archived' : 'active',
-      updated_at: new Date().toISOString()
-    }));
+    const payloads = items.map((it, idx) => {
+      const parsedRate = it.defaultRate !== undefined && it.defaultRate !== null && !isNaN(Number(it.defaultRate))
+        ? Number(it.defaultRate)
+        : (it.rate !== undefined && it.rate !== null && !isNaN(Number(it.rate)) ? Number(it.rate) : 100);
+
+      return {
+        id: it.id || `bom_imp_${Date.now()}_${idx}`,
+        modules_spec: (it.name || it.description || 'Hardware Item').trim(),
+        inverter_spec: it.category || 'structure',
+        dc_wire: it.description || it.specs || '',
+        ac_wire: it.unit || 'Nos',
+        capacity_kw: parsedRate,
+        hardware: it.make || 'STANDARD',
+        earthing_wire: it.specs || '',
+        la_wire: String(it.gstRate !== undefined ? it.gstRate : 18),
+        acdb: it.isArchived ? 'archived' : 'active',
+        updated_at: new Date().toISOString()
+      };
+    });
 
     try {
       const { data, error } = await supabase

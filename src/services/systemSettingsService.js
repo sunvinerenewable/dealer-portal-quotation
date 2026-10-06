@@ -84,5 +84,57 @@ export const systemSettingsService = {
       console.warn('[systemSettingsService] Save doc rules fallback:', err);
       return { success: false, error: err.message };
     }
+  },
+
+  async getCustomUnitsAndCategories() {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('terms_and_warranties')
+        .eq('id', 'global_settings')
+        .maybeSingle();
+
+      const tw = data?.terms_and_warranties || {};
+      return {
+        units: Array.isArray(tw.customUnits) ? tw.customUnits : [],
+        categories: Array.isArray(tw.customCategories) ? tw.customCategories : []
+      };
+    } catch (err) {
+      console.warn('[systemSettingsService] getCustomUnitsAndCategories error:', err);
+      return { units: [], categories: [] };
+    }
+  },
+
+  async saveCustomUnitsAndCategories(units, categories) {
+    try {
+      const { data: curr } = await supabase
+        .from('system_settings')
+        .select('*')
+        .eq('id', 'global_settings')
+        .maybeSingle();
+
+      const tw = curr?.terms_and_warranties || {};
+      if (Array.isArray(units)) tw.customUnits = units;
+      if (Array.isArray(categories)) tw.customCategories = categories;
+
+      const payload = {
+        id: 'global_settings',
+        company_profile: curr?.company_profile || {},
+        bank_details: curr?.bank_details || {},
+        terms_and_warranties: tw,
+        statutory_taxes: curr?.statutory_taxes || {},
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('system_settings')
+        .upsert([payload], { onConflict: 'id' });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true, data };
+    } catch (err) {
+      console.error('[systemSettingsService] saveCustomUnitsAndCategories error:', err);
+      return { success: false, error: err.message };
+    }
   }
 };

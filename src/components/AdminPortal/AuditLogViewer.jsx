@@ -9,6 +9,15 @@ export default function AuditLogViewer() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLog, setSelectedLog] = useState(null);
 
+  const formatDetailsText = (details) => {
+    if (!details) return '';
+    if (typeof details === 'string') return details;
+    if (typeof details === 'object') {
+      return details.message || details.reason || details.description || JSON.stringify(details);
+    }
+    return String(details);
+  };
+
   const filteredLogs = useMemo(() => {
     return (auditLogs || []).filter(log => {
       if (moduleFilter !== 'ALL' && log.module !== moduleFilter) return false;
@@ -16,8 +25,8 @@ export default function AuditLogViewer() {
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         const matchesAction = (log.action || '').toLowerCase().includes(term);
-        const matchesDetails = (log.details || '').toLowerCase().includes(term);
-        const matchesUser = (log.userName || '').toLowerCase().includes(term);
+        const matchesDetails = formatDetailsText(log.details).toLowerCase().includes(term);
+        const matchesUser = (log.userName || log.user || '').toLowerCase().includes(term);
         const matchesRecord = (log.recordId || '').toLowerCase().includes(term);
         if (!matchesAction && !matchesDetails && !matchesUser && !matchesRecord) return false;
       }
@@ -33,10 +42,10 @@ export default function AuditLogViewer() {
       `"${l.action}"`,
       `"${l.module}"`,
       `"${l.recordId}"`,
-      `"${l.userName}"`,
+      `"${l.userName || l.user || 'System'}"`,
       `"${l.role}"`,
       `"${l.ipAddress || '192.168.1.1'}"`,
-      `"${(l.details || '').replace(/"/g, '""')}"`,
+      `"${formatDetailsText(l.details).replace(/"/g, '""')}"`,
       `"${l.status || 'VERIFIED'}"`
     ]);
 
@@ -178,11 +187,11 @@ export default function AuditLogViewer() {
                     {log.recordId}
                   </td>
                   <td className="py-3 px-3">
-                    <div className="font-bold text-on-surface">{log.userName || 'System'}</div>
+                    <div className="font-bold text-on-surface">{log.userName || log.user || 'System'}</div>
                     <div className="text-[10px] text-secondary">{log.role || 'Admin'}</div>
                   </td>
-                  <td className="py-3 px-3 text-secondary max-w-[280px] truncate">
-                    {log.details}
+                  <td className="py-3 px-3 text-secondary max-w-[280px] truncate" title={formatDetailsText(log.details)}>
+                    {formatDetailsText(log.details)}
                   </td>
                   <td className="py-3 px-3 text-right">
                     <span className="px-2 py-0.5 rounded-full font-mono text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -222,7 +231,7 @@ export default function AuditLogViewer() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-secondary">Timestamp:</span>
-                  <span>{new Date(selectedLog.timestamp).toISOString()}</span>
+                  <span>{selectedLog.timestamp ? new Date(selectedLog.timestamp).toISOString() : 'Recent'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-secondary">Module / Action:</span>
@@ -234,7 +243,7 @@ export default function AuditLogViewer() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-secondary">Actor:</span>
-                  <span>{selectedLog.userName} ({selectedLog.role})</span>
+                  <span>{selectedLog.userName || selectedLog.user || 'System'} ({selectedLog.role})</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-secondary">Source IP:</span>
@@ -244,8 +253,8 @@ export default function AuditLogViewer() {
 
               <div>
                 <label className="block text-secondary font-medium mb-1">Details &bull; Description</label>
-                <p className="p-3 rounded-lg bg-surface-container-low text-on-surface leading-relaxed">
-                  {selectedLog.details}
+                <p className="p-3 rounded-lg bg-surface-container-low text-on-surface leading-relaxed whitespace-pre-wrap">
+                  {formatDetailsText(selectedLog.details)}
                 </p>
               </div>
 
